@@ -1,0 +1,19 @@
+# Third-party reference checkouts; retained locally for study only.
+/reference/
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+out/
+public/content/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
