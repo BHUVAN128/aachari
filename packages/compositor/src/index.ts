@@ -6,6 +6,7 @@ import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { ProjectManifest } from "@upcraft/contracts";
 
 export * from "./diagrams.ts";
+export * from "./probe.ts";
 
 export type RenderInput = { title: string; manifest: ProjectManifest; audioUrl: string; outputPath: string };
 

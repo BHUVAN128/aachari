@@ -23,6 +23,13 @@ the specified regression evidence are present.
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
   and labelled systems, plus independent label-vocabulary, geometry-overlap,
   contrast, and overflow validation before a scene asset may advance.
+- [~] Phase 4 — measured media gates: caption wording/line/safe-area/contrast
+  validation, audio-duration-vs-alignment checks on the narration MP3, render
+  integrity measured from the produced MP4 (dimensions, duration, fps, frame
+  count, audio track, codec), pre-render asset-availability fencing, and
+  persisted renderer/composition/export-profile provenance. Remaining:
+  loudness and pronunciation checks, independent parallel QA branches, and
+  multi-format renders.
 
 ## Remaining implementation order
 
@@ -35,8 +42,10 @@ the specified regression evidence are present.
    sound-plan/fallback artifact after the visual bible locks.
 4. [ ] Implement independent factual/pedagogy, visual/caption, audio, and
    render-integrity QA branches that converge before approval.
-5. [ ] Add measured voice/caption/render gates, renderer and export-profile
-   provenance, and tested multi-format renders.
+5. [~] Add measured voice/caption/render gates, renderer and export-profile
+   provenance, and tested multi-format renders. Caption layout, voice-alignment
+   duration, render integrity, provenance, and pre-render asset fencing are
+   implemented; loudness/pronunciation and multi-format renders remain.
 6. [ ] Add engineering, medical-source-quality, and client rights/style gates.
 7. [ ] Wire the spatial solver into layout/composition, then add feedback
    ingestion and the accepted-video cost-baseline workflow.

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import { ZodError } from "zod";
@@ -45,12 +46,13 @@ import {
   ProviderError,
   type ProviderUsageSnapshot,
 } from "@upcraft/providers";
-import { renderLesson } from "@upcraft/compositor";
+import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, renderLesson } from "@upcraft/compositor";
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
+import { validateCaptionLayout, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -158,6 +160,11 @@ const validationFeedback = async (runId: string, stage: StageName) => {
 const requireContent = <T extends Json>(artifact: { content: Json | null } | undefined, role: string) => {
   if (!artifact?.content) throw new Error(`Required valid artifact missing: ${role}`);
   return artifact.content as T;
+};
+
+const failWithFindings = async (runId: string, scope: string, findings: Array<{ rule: string; evidence: Record<string, unknown>; remediation: string }>): Promise<never> => {
+  await getDb().insert(qaFindings).values(findings.map((finding) => ({ runId, rule: finding.rule, severity: "critical" as const, evidence: finding.evidence, remediation: finding.remediation })));
+  throw new Error(`${scope} failed: ${findings.map((finding) => finding.rule).join(", ")}`);
 };
 
 const pricingVersion = "pricing/2026-09-17";
@@ -376,6 +383,17 @@ const runVoiceover = async (runId: string) => {
   const narrationResult = await synthesizeNarration(canonicalNarrationText(script));
   await recordUsage(runId, "voiceover", "elevenlabs", process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", startedAt, narrationResult.usage, "voiceover/v2", contextManifest("canonical-narration/v1", [{ role: "approved-script", hash: inputHash, chars: canonicalNarrationText(script).length, itemCount: script.narration.length }]));
   const narration = narrationResult.value;
+  const probeDir = await mkdtemp(join(tmpdir(), "upcraft-voice-"));
+  let measuredDurationMs: number;
+  try {
+    const audioPath = join(probeDir, "narration.mp3");
+    await writeFile(audioPath, narration.bytes);
+    measuredDurationMs = await probeAudioDurationMs(audioPath);
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
+  const voiceIssues = validateVoiceAlignment({ words: narration.words, measuredDurationMs });
+  if (voiceIssues.length) await failWithFindings(runId, "Voiceover QA", voiceIssues);
   const object = await putPrivateObject({ key: `runs/${runId}/audio/narration.mp3`, body: narration.bytes, contentType: "audio/mpeg" });
   const [asset] = await getDb().insert(mediaAssets).values({ runId, role: "narration", objectKey: object.key, sha256: object.sha256, mimeType: "audio/mpeg", byteSize: object.byteSize, selected: true, provenance: { voiceId: process.env.ELEVENLABS_VOICE_ID, model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2" } }).onConflictDoNothing().returning();
   const stableAsset = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, "narration"), eq(mediaAssets.sha256, object.sha256))))[0];
@@ -453,15 +471,25 @@ const render = async (runId: string, kind: "preview" | "final") => {
   if (!run) throw new Error("Run not found");
   const storedManifest = ProjectManifestSchema.parse(requireContent(manifestArtifact, "project-manifest"));
   const assetUrls = new Map(await Promise.all(assets.map(async (asset) => [asset.id, await getPrivateReadUrl(asset.objectKey, 3_600)] as const)));
+  const missingAssets = storedManifest.scenes.flatMap((scene) => scene.layers).filter((layer) => layer.assetId && !assetUrls.has(layer.assetId));
+  if (missingAssets.length) await failWithFindings(runId, "Pre-render asset availability", missingAssets.map((layer) => ({ rule: "render-asset-unavailable", evidence: { layerId: layer.id, assetId: layer.assetId }, remediation: "Restore the missing selected asset before rendering; never render a placeholder in its place." })));
   const manifest = ProjectManifestSchema.parse({ ...storedManifest, scenes: storedManifest.scenes.map((scene) => ({ ...scene, layers: scene.layers.map((layer) => ({ ...layer, ...(layer.assetId && assetUrls.get(layer.assetId) ? { assetUrl: assetUrls.get(layer.assetId) } : {}) })) })) });
   const voiceover = requireContent<{ objectKey: string }>(voiceoverArtifact, "voiceover");
   const outputPath = join(process.env.RENDER_OUTPUT_DIR ?? ".local/renders", runId, `${kind}.mp4`);
   await mkdir(join(process.env.RENDER_OUTPUT_DIR ?? ".local/renders", runId), { recursive: true });
   await renderLesson({ title: run.title, manifest, audioUrl: await getPrivateReadUrl(voiceover.objectKey, 3_600), outputPath });
+  const probe = await probeMedia(outputPath);
+  const expectedDurationMs = manifest.words.at(-1)?.endMs ?? 0;
+  const expectedFrames = Math.ceil((expectedDurationMs / 1000) * manifest.fps);
+  const renderIssues = validateRenderIntegrity({ probe, expectedDurationMs, expectedWidth: manifest.canvas.width, expectedHeight: manifest.canvas.height, expectedFps: manifest.fps, expectedFrames, requiredVideoCodec: "h264" });
+  if (renderIssues.length) await failWithFindings(runId, "Render integrity QA", renderIssues);
+  const renderer = rendererVersion();
+  await getDb().update(videoRuns).set({ rendererVersion: renderer }).where(eq(videoRuns.id, runId));
   const bytes = await readFile(outputPath);
   const object = await putPrivateObject({ key: `runs/${runId}/renders/${kind}.mp4`, body: bytes, contentType: "video/mp4" });
-  await getDb().insert(renderOutputs).values({ runId, kind, objectKey: object.key, sha256: object.sha256, durationMs: manifest.words.at(-1)?.endMs ?? 0, width: manifest.canvas.width, height: manifest.canvas.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: object.key, sha256: object.sha256 } });
-  return saveArtifact({ runId, stage: kind === "preview" ? "preview-render" : "final-render", role: `${kind}-render`, schemaVersion: "render-output/v1", inputHash: sha(manifest), content: { objectKey: object.key, sha256: object.sha256, durationMs: manifest.words.at(-1)?.endMs ?? 0 } });
+  await getDb().insert(renderOutputs).values({ runId, kind, objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, width: manifest.canvas.width, height: manifest.canvas.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs } });
+  const provenance = { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, frameCount: deriveFrameCount(probe), width: probe.width, height: probe.height, videoCodec: probe.videoCodec, audioCodec: probe.audioCodec, rendererVersion: renderer, composition: "Lesson", exportProfile: "h264/aac/jpeg" };
+  return saveArtifact({ runId, stage: kind === "preview" ? "preview-render" : "final-render", role: `${kind}-render`, schemaVersion: "render-output/v1", inputHash: sha(manifest), content: provenance });
 };
 
 const runQa = async (runId: string) => {
@@ -481,11 +509,12 @@ const runQa = async (runId: string) => {
   if (!captions.cues.length || captions.cues.some((cue) => cue.wordIndexes.some((index) => index >= captions.words.length))) issues.push({ rule: "caption-index-integrity", evidence: {}, remediation: "Rebuild captions with indexes into the locked word alignment." });
   const scriptSceneCount = new Set(script.narration.map((line) => line.sceneId)).size;
   if (manifest.scenes.length !== scriptSceneCount || manifest.scenes.some((scene) => !assets.some((asset) => asset.id === scene.layers.find((layer) => layer.assetId)?.assetId))) issues.push({ rule: "scene-asset-completeness", evidence: { scenes: manifest.scenes.length, scriptScenes: scriptSceneCount, assets: assets.length }, remediation: "Produce and attach one validated selected asset for every narrated scene." });
+  issues.push(...validateCaptionLayout({ canvas: manifest.canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words }));
   if (issues.length) {
     await getDb().insert(qaFindings).values(issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
     throw new Error("Release QA failed: " + issues.map((issue) => issue.rule).join(", "));
   }
-  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "scene-asset-completeness", "preview-render-present"] } });
+  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present"] } });
 };
 
 const runReleaseRecord = async (runId: string) => {
