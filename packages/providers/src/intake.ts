@@ -10,6 +10,11 @@ export const INTAKE_AGENT_ID = "intake-briefing-agent";
 export const INTAKE_PROMPT_VERSION = "intake-briefing/v1";
 export const INTAKE_MODEL = () => process.env.INTAKE_BRIEF_MODEL ?? "openai/gpt-5.6-luna";
 
+// This is deliberately stricter than the model prompt. A structured response
+// that downgrades a health-adjacent request must be held, not allowed to open a
+// standard release route.
+const medicalRequestPattern = /\b(?:medical|medicine|diagnos(?:e|is|tic)|treat(?:ment|ing)?|patient|drug|medication|symptom|health|clinical|disease|illness|therapy|pharmacolog(?:y|ical))\b/i;
+
 const instructions = `You are the Intake Briefing Agent for a source-grounded educational video system.
 
 Convert only the user's lesson request into the strict intake-brief schema. You are metadata extraction, not a teacher or researcher. Never invent a source, claim, citation, narration, lesson explanation, visual asset, or medical advice. You have no tools and must not request web search or external retrieval.
@@ -29,11 +34,23 @@ const agent = new ToolLoopAgent({
 
 const numeric = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+/** Enforces non-negotiable intake routing invariants after schema parsing. */
+export const enforceIntakeBriefPolicy = (params: { requestText: string; language: string; brief: unknown }): IntakeBrief => {
+  const brief = IntakeBriefSchema.parse(params.brief);
+  if (brief.language !== params.language) {
+    throw new Error("Intake Briefing Agent did not preserve the selected language exactly");
+  }
+  if (medicalRequestPattern.test(params.requestText) && brief.domain !== "medical") {
+    throw new Error("Intake Briefing Agent must route health-related requests as medical");
+  }
+  return brief;
+};
+
 export const generateIntakeBrief = async (params: { requestText: string; language: string }): Promise<ProviderResult<IntakeBrief>> => {
   const prompt = `Selected language: ${params.language}\nUser lesson request:\n${params.requestText}`;
   const result = await agent.generate({ prompt });
   if (!result.output) throw new Error("Intake Briefing Agent did not return a structured brief");
-  const value = IntakeBriefSchema.parse(result.output);
+  const value = enforceIntakeBriefPolicy({ requestText: params.requestText, language: params.language, brief: result.output });
   return {
     value,
     usage: {

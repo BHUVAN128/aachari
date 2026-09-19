@@ -13,8 +13,10 @@ the specified regression evidence are present.
   and bounded invalid-artifact regeneration are implemented. This change adds
   periodic lease renewal and a fencing test. Remaining: crash/resume and
   duplicate-media integration tests.
-- [~] Phase 1 — test harness: unit tests and one PostgreSQL lease integration
-  test exist. The benchmark regression set is not complete.
+- [~] Phase 1 — test harness: unit tests, a PostgreSQL lease integration test,
+  and deterministic Intake Brief policy fences (selected language and
+  conservative medical routing) exist. The benchmark regression set is not
+  complete.
 
 ## Remaining implementation order
 
