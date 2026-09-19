@@ -1,0 +1,19 @@
+{
+  "name": "@upcraft/compositor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": { "lint": "tsc --noEmit", "test": "vitest run --passWithNoTests" },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@upcraft/contracts": "file:../contracts",
+    "react": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "vitest": "^3.2.4"
+  }
+}

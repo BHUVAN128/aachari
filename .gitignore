@@ -12,6 +12,11 @@ public/content/
 .env
 .env.*
 !.env.example
+.local/
+.next/
+coverage/
+playwright-report/
+test-results/
 
 # OS and editor files
 .DS_Store

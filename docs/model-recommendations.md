@@ -10,6 +10,7 @@ This is a governing document under [`AGENTS.md`](../AGENTS.md). Replacing a defa
 
 | Job | Default | Why | Fallback / escalation |
 | --- | --- | --- | --- |
+| Intake Briefing Agent (chat metadata extraction) | OpenAI GPT-5.6 Luna via AI Gateway | The user-approved low-cost route is sufficient for strict structured metadata and conservative risk classification. The agent is toolless and is not a factual, source, narration, or release authority. | Hold intake if the route is unavailable or malformed; do not silently substitute a model without a new policy decision. |
 | Source-grounded lesson planning and structured scene manifests | OpenAI GPT-5.6 Terra | It is positioned for intelligence/cost balance, supports tools including web search, and costs $2/$12 per million input/output tokens. Script-generation cost is small relative to media. | GPT-5.6 Sol for difficult, high-stakes review; GPT-5.6 Luna only for low-risk bulk metadata. |
 | Independent claim verification | Google Gemini 3.8 Flash | Use a second provider to check citations and unsupported claims; it supports paid search grounding and is priced at $0.75/$3.75 per million input/output tokens through 2026. | GPT-5.6 Terra with a separate verifier prompt when a second provider is unavailable. |
 | Medical educational review | GPT-5.6 Sol plus clinician approval | High-quality model assistance is not a release authority. Medical content must remain source-grounded and clinician-approved. | Hold content; never downgrade to automatic publication. |
@@ -18,6 +19,16 @@ This is a governing document under [`AGENTS.md`](../AGENTS.md). Replacing a defa
 | Diagrams, labels, equations, charts, arrows, and captions | Typed SVG + Remotion components | Generated images can misspell labels or depict incorrect scientific relationships. Deterministic code is cheaper, accessible, and editable. | None; do not delegate factual diagrams to an image model. |
 | Long-form teaching narration | ElevenLabs v2 Multilingual | Stable for long-form speech, with one consistent voice and alignment timestamps for caption generation. | ElevenLabs v3 when expressive multi-speaker delivery is required; Flash/Turbo for previews. |
 | Private/offline drafting and safety classification | `gpt-oss-20b` / `gpt-oss-safeguard-20b` | Apache 2.0 open weights, controllable deployment, and suitable for drafts, routing, and policy checks. | `gpt-oss-120b` where 80 GB GPU capacity is justified; use hosted models for final high-stakes review. |
+
+## Routing and reliability requirements
+
+- Resolve a concrete provider, model identifier, version when available, capability configuration, and fallback policy before a stage starts. Persist the resolved route on the stage checkpoint; do not rely on a mutable provider default for reproducibility.
+- The Intake Briefing Agent is a separate pre-run route, resolved as `openai/gpt-5.6-luna` through AI Gateway. It has no retrieval or media tools and may emit only `intake-brief/v1`; its output must be schema-validated before `createVideoRun` is called.
+- Persist provider request identifiers, reported token/unit usage, cached and reasoning-token details where available, context-projection version, pricing-version metadata, cost, latency, and outcome for every attempt. Use those records to compare accepted-video cost; never silently trade away evidence or quality to meet a cost target.
+- A text-generation route that produces a fact pack, blueprint, script, asset brief, manifest, or QA artifact must support the stage's typed output contract. Validate the returned artifact independently of the provider's structured-output claim.
+- Capability gating is mandatory: do not start work that requires unavailable credentials, search, image, TTS, storage, renderer, approval, or model features. Optional enrichment may be omitted only under the process document's recorded fallback rules.
+- A fallback may address a transient provider failure only when it can satisfy the same stage contract and quality gate. It must create a new recorded attempt and undergo the same validation and verification; it must never silently downgrade a critical artifact.
+- Model routing separates generation from verification where the stage requires independent review. A generator cannot be the sole factual or release authority for its own artifact.
 
 ## Why this is not a single-model system
 

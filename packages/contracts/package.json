@@ -1,0 +1,17 @@
+{
+  "name": "@upcraft/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

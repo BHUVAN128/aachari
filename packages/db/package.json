@@ -1,0 +1,26 @@
+{
+  "name": "@upcraft/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:seed-clinician": "tsx src/seed-clinician.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests --exclude test/**/*.integration.test.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@upcraft/contracts": "file:../contracts",
+    "drizzle-orm": "^0.44.5",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4",
+    "dotenv": "^16.6.1",
+    "tsx": "^4.20.5",
+    "vitest": "^3.2.4"
+  }
+}

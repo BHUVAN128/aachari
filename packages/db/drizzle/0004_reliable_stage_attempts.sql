@@ -1,0 +1,10 @@
+ALTER TABLE "source_documents" ADD COLUMN "retrieved_url" text;
+ALTER TABLE "source_documents" ADD COLUMN "retrieval_status" varchar(40);
+ALTER TABLE "source_documents" ADD COLUMN "source_byte_size" integer;
+ALTER TABLE "artifact_attempts" ADD COLUMN "input_hash" varchar(64);
+ALTER TABLE "artifact_attempts" ADD COLUMN "output_hash" varchar(64);
+ALTER TABLE "artifact_attempts" ADD COLUMN "schema_version" varchar(120);
+ALTER TABLE "artifact_attempts" ADD COLUMN "validation_evidence" jsonb DEFAULT '{}'::jsonb NOT NULL;
+ALTER TABLE "stage_checkpoints" ADD COLUMN "lease_owner" varchar(255);
+ALTER TABLE "stage_checkpoints" ADD COLUMN "lease_heartbeat_at" timestamp with time zone;
+CREATE UNIQUE INDEX "media_assets_run_role_hash_idx" ON "media_assets" USING btree ("run_id","role","sha256");

@@ -1,0 +1,35 @@
+{
+  "name": "@upcraft/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.0.0",
+    "@upcraft/contracts": "file:../../packages/contracts",
+    "@upcraft/db": "file:../../packages/db",
+    "@upcraft/pipeline": "file:../../packages/pipeline",
+    "@upcraft/providers": "file:../../packages/providers",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.44.5",
+    "framer-motion": "^12.23.12",
+    "geist": "^1.7.0",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

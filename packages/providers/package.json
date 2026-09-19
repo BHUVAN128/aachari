@@ -1,0 +1,29 @@
+{
+  "name": "@upcraft/providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./intake": "./src/intake.ts",
+    "./source-extraction": "./src/source-extraction.ts",
+    "./storage": "./src/storage.ts",
+    "./usage": "./src/usage.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.87",
+    "@aws-sdk/client-s3": "^3.864.0",
+    "@aws-sdk/s3-request-presigner": "^3.864.0",
+    "@upcraft/contracts": "file:../contracts",
+    "ai": "^7.0.107",
+    "unpdf": "^1.8.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

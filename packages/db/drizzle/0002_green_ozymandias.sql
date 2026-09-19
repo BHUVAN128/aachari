@@ -1,0 +1,1 @@
+ALTER TABLE "source_claims" ADD COLUMN "evidence" jsonb DEFAULT '{}'::jsonb NOT NULL;

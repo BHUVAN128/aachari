@@ -1,0 +1,33 @@
+{
+  "name": "upcraft-educational-video-system",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.13.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
+    "db:generate": "npm run db:generate --workspace=@upcraft/db",
+    "db:migrate": "npm run db:migrate --workspace=@upcraft/db",
+    "db:seed-clinician": "npm run db:seed-clinician --workspace=@upcraft/db",
+    "dev": "concurrently -k -n web,worker -c cyan,magenta \"npm run dev --workspace=@upcraft/web\" \"npm run dev --workspace=@upcraft/worker\"",
+    "start": "npm run infra:up && npm run db:migrate && npm run dev",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  }
+}

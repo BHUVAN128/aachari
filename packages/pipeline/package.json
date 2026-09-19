@@ -1,0 +1,23 @@
+{
+  "name": "@upcraft/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./intake": "./src/intake.ts",
+    "./stages": "./src/stages.ts",
+    "./spatial": "./src/spatial.ts"
+  },
+  "scripts": { "lint": "tsc --noEmit", "test": "vitest run --passWithNoTests" },
+  "dependencies": {
+    "@upcraft/contracts": "file:../contracts",
+    "@upcraft/compositor": "file:../compositor",
+    "@upcraft/db": "file:../db",
+    "@upcraft/providers": "file:../providers",
+    "bullmq": "^5.58.5",
+    "ioredis": "^5.7.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": { "vitest": "^3.2.4" }
+}
