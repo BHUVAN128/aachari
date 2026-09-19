@@ -55,6 +55,7 @@ import { assertTelemetrySafe } from "./telemetry.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
+import { validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "./domain-qa.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -539,10 +540,11 @@ const render = async (runId: string, kind: "preview" | "final") => {
 };
 
 const runQa = async (runId: string) => {
-  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets] = await Promise.all([
+  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact] = await Promise.all([
     getArtifact(runId, "caption-timings"), getArtifact(runId, "project-manifest"), getArtifact(runId, "preview-render"),
     getArtifact(runId, "fact-pack"), getArtifact(runId, "approved-script"), getArtifact(runId, "resolved-layout"),
     getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
+    getRun(runId), getDb().select().from(sourceDocuments).where(eq(sourceDocuments.runId, runId)), getArtifact(runId, "selected-assets"),
   ]);
   const captions = requireContent<{ words: WordTiming[]; cues: Array<{ wordIndexes: number[] }> }>(captionArtifact, "caption-timings");
   const manifest = ProjectManifestSchema.parse(requireContent(manifestArtifact, "project-manifest"));
@@ -556,11 +558,18 @@ const runQa = async (runId: string) => {
   const scriptSceneCount = new Set(script.narration.map((line) => line.sceneId)).size;
   if (manifest.scenes.length !== scriptSceneCount || manifest.scenes.some((scene) => !assets.some((asset) => asset.id === scene.layers.find((layer) => layer.assetId)?.assetId))) issues.push({ rule: "scene-asset-completeness", evidence: { scenes: manifest.scenes.length, scriptScenes: scriptSceneCount, assets: assets.length }, remediation: "Produce and attach one validated selected asset for every narrated scene." });
   issues.push(...validateCaptionLayout({ canvas: manifest.canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words }));
+  if (run && factArtifact && selectedAssetsArtifact?.content) {
+    const diagramLabels = (selectedAssetsArtifact.content as { diagramKinds?: Array<{ labels?: string[] }> }).diagramKinds?.flatMap((entry) => entry.labels ?? []) ?? [];
+    const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
+    issues.push(...validateEngineeringContent({ domain: run.domain, script, factPack, diagramLabels }));
+    issues.push(...validateMedicalSources({ domain: run.domain, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })) }));
+    issues.push(...validateClientAssetRights({ domain: run.domain, assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) }));
+  }
   if (issues.length) {
     await getDb().insert(qaFindings).values(issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
     throw new Error("Release QA failed: " + issues.map((issue) => issue.rule).join(", "));
   }
-  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present"] } });
+  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present", "domain-policy"] } });
 };
 
 const runReleaseRecord = async (runId: string) => {
@@ -574,6 +583,8 @@ const runReleaseRecord = async (runId: string) => {
   ]);
   const output = requireContent(outputArtifact, "final-render");
   if (!run || !manifestArtifact || !qaArtifact || !approvalRows.some((approval) => approval.decision === "approved")) throw new Error("Release record prerequisites are incomplete");
+  const clientStyleIssues = validateClientStyleApproval({ domain: run.domain, approvals: approvalRows.map((approval) => ({ decision: approval.decision, notes: approval.notes })) });
+  if (clientStyleIssues.length) await failWithFindings(runId, "Client production policy", clientStyleIssues);
   const intakeAttemptsRows = intake ? await db.select().from(intakeAttempts).where(eq(intakeAttempts.sessionId, intake.id)) : [];
   const recordContent = { schemaVersion: "release-record/v1", releasedAt: new Date().toISOString(), run: { id: run.id, title: run.title, domain: run.domain, snapshot: run.snapshot, snapshotHash: run.snapshotHash }, intake: intake ? { sessionId: intake.id, inputHash: intake.inputHash, brief: intake.brief, briefHash: intake.briefHash, attempts: intakeAttemptsRows.map((attempt) => ({ attempt: attempt.attempt, provider: attempt.provider, model: attempt.model, requestId: attempt.requestId, promptVersion: attempt.promptVersion, outcome: attempt.outcome, inputTokens: attempt.inputTokens, cachedInputTokens: attempt.cachedInputTokens, outputTokens: attempt.outputTokens, reasoningTokens: attempt.reasoningTokens, latencyMs: attempt.latencyMs, contextManifest: attempt.contextManifest })) } : null, finalOutput: output, manifest: manifestArtifact.content, qa: qaArtifact.content, sources: sources.map((source) => ({ id: source.id, name: source.originalName, url: source.sourceUrl, sha256: source.sha256, sourceBytesSha256: source.sourceBytesSha256, retrievedAt: source.retrievedAt?.toISOString() ?? null })), claims: claims.map((claim) => ({ id: claim.id, sourceId: claim.sourceId, claim: claim.claim, locator: claim.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: claim.verifiedAt?.toISOString() ?? null, verifierModel: claim.verifierModel })), artifacts: artifactRows.map((artifact) => ({ id: artifact.id, stage: artifact.stage, role: artifact.role, version: artifact.version, sha256: artifact.sha256, inputHash: artifact.inputHash, schemaVersion: artifact.schemaVersion, provenance: artifact.provenance })), checkpoints: checkpoints.map((checkpoint) => ({ stage: checkpoint.stage, inputHash: checkpoint.inputHash, outputHash: checkpoint.outputHash, outcome: checkpoint.outcome, evidence: checkpoint.evidence })), providerUsage: usage.map((entry) => ({ stage: entry.stage, provider: entry.provider, model: entry.model, requestId: entry.requestId, outcome: entry.outcome, latencyMs: entry.latencyMs, inputTokens: entry.inputTokens, cachedInputTokens: entry.cachedInputTokens, outputTokens: entry.outputTokens, reasoningTokens: entry.reasoningTokens, inputCharacters: entry.inputCharacters, outputCharacters: entry.outputCharacters, costMicrounits: entry.costMicrounits, pricingVersion: entry.pricingVersion, promptVersion: entry.promptVersion, contextManifest: entry.contextManifest })), approvals: approvalRows.map((approval) => ({ decision: approval.decision, reviewerId: approval.reviewerId, clinicianApproverId: approval.clinicianApproverId, notes: approval.notes })), renders: renders.map((renderOutput) => ({ kind: renderOutput.kind, sha256: renderOutput.sha256, durationMs: renderOutput.durationMs, width: renderOutput.width, height: renderOutput.height })) };
   const record = await saveArtifact({ runId, stage: "release-record", role: "release-record", schemaVersion: "release-record/v1", inputHash: sha(recordContent), content: recordContent });

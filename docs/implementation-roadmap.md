@@ -23,6 +23,11 @@ the specified regression evidence are present.
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
   and labelled systems, plus independent label-vocabulary, geometry-overlap,
   contrast, and overflow validation before a scene asset may advance.
+- [x] Phase 5 — domain policy gates: engineering lessons must state units,
+  assumptions, and calculation steps; medical lessons must cite at least one
+  authoritative clinical source (clinician approval remains the release
+  authority); client-production work requires a rights/provenance record for
+  every asset and an explicit client style approval before release.
 - [~] Phase 3 — optional illustration candidates and sound plan: the visual
   bible's persistent entities drive a deterministic per-scene illustration
   decision (recorded omission or candidate), candidates are generated in
@@ -57,7 +62,7 @@ the specified regression evidence are present.
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are
    implemented; loudness/pronunciation and multi-format renders remain.
-6. [ ] Add engineering, medical-source-quality, and client rights/style gates.
+6. [x] Add engineering, medical-source-quality, and client rights/style gates.
 7. [ ] Wire the spatial solver into layout/composition, then add feedback
    ingestion and the accepted-video cost-baseline workflow.
 
