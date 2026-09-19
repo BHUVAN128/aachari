@@ -11,8 +11,9 @@ the specified regression evidence are present.
 - [~] Phase 0 — stage ownership/recovery: leases, expiry recovery, stable
   media deduplication, real locked-input checkpoint hashes, URL provenance,
   and bounded invalid-artifact regeneration are implemented. This change adds
-  periodic lease renewal and a fencing test. Remaining: crash/resume and
-  duplicate-media integration tests.
+  periodic lease renewal plus database-level fencing, source/artifact-hash,
+  and duplicate-media replay tests. Remaining: crash/resume and
+  invalid-artifact-regeneration integration tests.
 - [~] Phase 1 — test harness: unit tests, a PostgreSQL lease integration test,
   and deterministic Intake Brief policy fences (selected language and
   conservative medical routing) exist. The benchmark regression set is not

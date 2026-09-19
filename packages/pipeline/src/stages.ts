@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { and, desc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
   ApprovedScriptSchema,
@@ -474,7 +474,7 @@ export const getStageInputHash = async (runId: string, stage: StageName) => {
     const artifact = await getArtifact(runId, role);
     lockedArtifacts.push({ role, id: artifact?.id ?? null, sha256: artifact?.sha256 ?? null, inputHash: artifact?.inputHash ?? null, schemaVersion: artifact?.schemaVersion ?? null });
   }
-  const sources = await db.select({ id: sourceDocuments.id, sha256: sourceDocuments.sha256, sourceBytesSha256: sourceDocuments.sourceBytesSha256, retrievedAt: sourceDocuments.retrievedAt }).from(sourceDocuments).where(eq(sourceDocuments.runId, runId));
+  const sources = await db.select({ id: sourceDocuments.id, sha256: sourceDocuments.sha256, sourceBytesSha256: sourceDocuments.sourceBytesSha256, retrievedAt: sourceDocuments.retrievedAt }).from(sourceDocuments).where(eq(sourceDocuments.runId, runId)).orderBy(asc(sourceDocuments.id));
   return sha({ snapshotHash: run.snapshotHash, stage, artifacts: lockedArtifacts, sources });
 };
 
