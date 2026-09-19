@@ -45,7 +45,7 @@ import {
   type ProviderUsageSnapshot,
 } from "@upcraft/providers";
 import { renderLesson } from "@upcraft/compositor";
-import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus } from "./runs.ts";
+import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
@@ -486,6 +486,7 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
   const inputHash = await getStageInputHash(runId, stage);
   const lease = await claimStageLease({ runId, stage, inputHash, owner });
   if (!lease) return;
+  const leaseHeartbeat = startStageLeaseHeartbeat({ runId, stage, leaseToken: lease.leaseToken, owner });
   await setRunStatus(runId, "running", { stage });
   await appendRunEvent(runId, stage, "stage_started", `${stage} started.`, {});
   const stageStartedAt = Date.now();
@@ -497,6 +498,9 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     else if (stage === "release-record") result = await runReleaseRecord(runId);
     else result = await stageHandlers[stage](runId);
 
+    // Fence the stage result before checkpointing: a reclaimed lease means
+    // this worker's output is stale and cannot advance the pipeline.
+    await leaseHeartbeat.stop();
     const outputHash = result && typeof result === "object" && "sha256" in result && typeof result.sha256 === "string" ? result.sha256 : sha(result);
     await checkpointStage({ runId, stage, inputHash, outputHash, outcome: "valid", leaseToken: lease.leaseToken, leaseOwner: owner, evidence: { stageInputHash: inputHash, leaseExpiresAt: lease.leaseExpiresAt.toISOString() } });
     await appendRunEvent(runId, stage, "stage_completed", `${stage} completed.`, {});
@@ -519,6 +523,10 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     if (next) await scheduleStage(runId, next);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown pipeline error";
+    if (error instanceof StageLeaseLostError) {
+      await appendRunEvent(runId, stage, "status", `${stage} lease ownership was lost; this worker did not promote its result.`, { code: "STAGE_LEASE_LOST" });
+      return;
+    }
     const route = routeForStage(stage);
     if (route.provider !== "deterministic") await recordUsage(runId, stage, route.provider, route.model, stageStartedAt, { model: route.model }, `${stage}/v2`, { projection: "unknown-at-failure" }, "failed", error instanceof ProviderError ? error.code : "VALIDATION_OR_STAGE_ERROR");
     if (error instanceof ProviderError && error.retryable) {
@@ -544,5 +552,9 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     // must not consume BullMQ retries; only classified transient provider failures
     // are rethrown above.
     return;
+  } finally {
+    // `stop` is idempotent.  Suppress its lease-loss error here because the
+    // success/catch paths above make the ownership decision explicitly.
+    await leaseHeartbeat.stop().catch(() => undefined);
   }
 };

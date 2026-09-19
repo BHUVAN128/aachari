@@ -151,6 +151,19 @@ export const setRunStatus = async (runId: string, status: RunStatus, updates: { 
 };
 
 export const STAGE_LEASE_MS = 5 * 60 * 1_000;
+/**
+ * A worker must renew its lease well before expiry.  Keeping this independent
+ * of the queue acknowledgement is important: BullMQ delivery is not durable
+ * ownership of a pipeline stage.
+ */
+export const STAGE_LEASE_HEARTBEAT_MS = Math.floor(STAGE_LEASE_MS / 3);
+
+export class StageLeaseLostError extends Error {
+  constructor(runId: string, stage: StageName) {
+    super(`Stage lease is no longer owned: ${runId}/${stage}`);
+    this.name = "StageLeaseLostError";
+  }
+}
 
 /** Claims one stage attempt in PostgreSQL; queue delivery is not ownership. */
 export const claimStageLease = async (params: { runId: string; stage: StageName; inputHash: string; owner: string; now?: Date }): Promise<{ leaseToken: string; leaseExpiresAt: Date; attemptCount: number } | null> => {
@@ -188,8 +201,51 @@ export const heartbeatStageLease = async (params: { runId: string; stage: StageN
   const updated = await db.update(stageCheckpoints).set({ leaseOwner: params.owner, leaseHeartbeatAt: now, leaseExpiresAt, updatedAt: now }).where(and(
     eq(stageCheckpoints.runId, params.runId), eq(stageCheckpoints.stage, params.stage), eq(stageCheckpoints.leaseToken, params.leaseToken), eq(stageCheckpoints.outcome, "running"),
   )).returning({ id: stageCheckpoints.id });
-  if (!updated.length) throw new Error(`Stage lease is no longer owned: ${params.runId}/${params.stage}`);
+  if (!updated.length) throw new StageLeaseLostError(params.runId, params.stage);
   return leaseExpiresAt;
+};
+
+/**
+ * Renews a claimed stage while provider calls or rendering are in progress.
+ * Callers must await `stop()` before committing their checkpoint; that makes
+ * a lease loss a hard fence instead of silently promoting stale work.
+ */
+export const startStageLeaseHeartbeat = (params: {
+  runId: string;
+  stage: StageName;
+  leaseToken: string;
+  owner: string;
+  intervalMs?: number;
+}) => {
+  let stopped = false;
+  let lost: StageLeaseLostError | null = null;
+  let pending: Promise<void> | null = null;
+  const intervalMs = params.intervalMs ?? STAGE_LEASE_HEARTBEAT_MS;
+
+  const renew = () => {
+    if (stopped || pending || lost) return;
+    pending = heartbeatStageLease(params)
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        lost = error instanceof StageLeaseLostError
+          ? error
+          : new StageLeaseLostError(params.runId, params.stage);
+      })
+      .finally(() => { pending = null; });
+  };
+
+  const timer = setInterval(renew, intervalMs);
+  // A lease timer must never be the only reason a worker process stays alive.
+  timer.unref();
+
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      await pending;
+      if (lost) throw lost;
+    },
+  };
 };
 
 export const checkpointStage = async (params: { runId: string; stage: StageName; inputHash: string; outcome: "valid" | "failed" | "awaiting_approval"; outputHash?: string; evidence?: Record<string, unknown>; leaseToken?: string; leaseOwner?: string }) => {
@@ -203,6 +259,9 @@ export const checkpointStage = async (params: { runId: string; stage: StageName;
     leaseHeartbeatAt: now, leaseExpiresAt: null, updatedAt: now,
   }).where(and(...where)).returning({ id: stageCheckpoints.id });
   if (updated.length) return;
+  // A caller that supplied a lease has lost ownership.  It must never create
+  // a second checkpoint or promote output after a newer worker took the lease.
+  if (params.leaseToken) throw new StageLeaseLostError(params.runId, params.stage);
   await db.insert(stageCheckpoints).values({
     runId: params.runId, stage: params.stage, inputHash: params.inputHash, outputHash: params.outputHash,
     outcome: params.outcome, evidence: params.evidence ?? {}, attemptCount: 1, leaseOwner: params.leaseOwner,
