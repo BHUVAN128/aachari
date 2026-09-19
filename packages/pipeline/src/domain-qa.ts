@@ -1,4 +1,4 @@
-import type { ApprovedScript, Domain, FactPack } from "@upcraft/contracts";
+import type { ApprovedScript, Domain, FactPack, PedagogyReview } from "@upcraft/contracts";
 
 /**
  * Domain policy gates from `benchmarkstofocus.md`. These are deterministic
@@ -49,6 +49,21 @@ export const validateMedicalSources = (params: { domain: Domain; sources: Array<
     return [{ rule: "medical-source-authority", evidence: { sources: params.sources.map((source) => source.sourceUrl ?? source.url ?? null) }, remediation: "Cite at least one authoritative clinical source; clinician approval remains the release authority." }];
   }
   return [];
+};
+
+/**
+ * Deterministic reducer over a separately routed pedagogy review. Only critical
+ * issues and failed mandatory checks block release; advisory notes are recorded
+ * elsewhere.
+ */
+export const pedagogyReviewIssues = (review: PedagogyReview): DomainIssue[] => {
+  const issues: DomainIssue[] = review.issues
+    .filter((issue) => issue.severity === "critical")
+    .map((issue) => ({ rule: "pedagogy-critical", evidence: { evidence: issue.evidence }, remediation: issue.remediation }));
+  if (!review.objectiveCovered) issues.push({ rule: "pedagogy-objective-not-covered", evidence: {}, remediation: "Revise the script so the narration covers the measurable learning objective." });
+  if (!review.oneIdeaPerBeat) issues.push({ rule: "pedagogy-multiple-ideas-per-beat", evidence: {}, remediation: "Split the beat so each introduces one idea and one meaningful canvas change." });
+  if (!review.readingLevelAppropriate) issues.push({ rule: "pedagogy-reading-level", evidence: {}, remediation: "Rewrite the narration at the target audience reading level." });
+  return issues;
 };
 
 export type RightedAsset = { role: string; provenance: Record<string, unknown> | null };

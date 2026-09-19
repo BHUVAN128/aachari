@@ -9,6 +9,7 @@ import {
   BlueprintSchema,
   ClaimVerificationSchema,
   FactPackSchema,
+  PedagogyReviewSchema,
   ProjectManifestSchema,
   ResolvedLayoutSchema,
   ScriptVerificationSchema,
@@ -56,7 +57,7 @@ import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
-import { validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "./domain-qa.ts";
+import { pedagogyReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "./domain-qa.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -539,11 +540,12 @@ const render = async (runId: string, kind: "preview" | "final") => {
 };
 
 const runQa = async (runId: string) => {
-  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact] = await Promise.all([
+  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact, blueprintArtifact] = await Promise.all([
     getArtifact(runId, "caption-timings"), getArtifact(runId, "project-manifest"), getArtifact(runId, "preview-render"),
     getArtifact(runId, "fact-pack"), getArtifact(runId, "approved-script"), getArtifact(runId, "resolved-layout"),
     getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
     getRun(runId), getDb().select().from(sourceDocuments).where(eq(sourceDocuments.runId, runId)), getArtifact(runId, "selected-assets"),
+    getArtifact(runId, "lesson-blueprint"),
   ]);
   const captions = requireContent<{ words: WordTiming[]; cues: Array<{ wordIndexes: number[] }> }>(captionArtifact, "caption-timings");
   const manifest = ProjectManifestSchema.parse(requireContent(manifestArtifact, "project-manifest"));
@@ -552,23 +554,33 @@ const runQa = async (runId: string) => {
   const badWords = captions.words.filter((word, index) => word.endMs <= word.startMs || (index > 0 && word.startMs < (captions.words[index - 1]?.endMs ?? 0)));
   if (badWords.length) issues.push({ rule: "caption-monotonicity", evidence: { count: badWords.length }, remediation: "Rebuild caption timings from the validated narration alignment." });
   if (!previewArtifact) issues.push({ rule: "preview-render-present", evidence: {}, remediation: "Render the preview from the locked project manifest." });
-  if (!factArtifact || !scriptArtifact || !layoutArtifact || !manifestArtifact) issues.push({ rule: "artifact-completeness", evidence: { missing: ["fact-pack", "approved-script", "resolved-layout", "project-manifest"].filter((role) => ![factArtifact, scriptArtifact, layoutArtifact, manifestArtifact][["fact-pack", "approved-script", "resolved-layout", "project-manifest"].indexOf(role)]) }, remediation: "Restore the missing validated upstream artifact before release." });
+  const requiredArtifacts: Array<[string, unknown]> = [["fact-pack", factArtifact], ["approved-script", scriptArtifact], ["resolved-layout", layoutArtifact], ["project-manifest", manifestArtifact], ["lesson-blueprint", blueprintArtifact]];
+  const missingArtifacts = requiredArtifacts.filter(([, artifact]) => !artifact).map(([role]) => role);
+  if (missingArtifacts.length) issues.push({ rule: "artifact-completeness", evidence: { missing: missingArtifacts }, remediation: "Restore the missing validated upstream artifact before release." });
   if (!captions.cues.length || captions.cues.some((cue) => cue.wordIndexes.some((index) => index >= captions.words.length))) issues.push({ rule: "caption-index-integrity", evidence: {}, remediation: "Rebuild captions with indexes into the locked word alignment." });
   const scriptSceneCount = new Set(script.narration.map((line) => line.sceneId)).size;
   if (manifest.scenes.length !== scriptSceneCount || manifest.scenes.some((scene) => !assets.some((asset) => asset.id === scene.layers.find((layer) => layer.assetId)?.assetId))) issues.push({ rule: "scene-asset-completeness", evidence: { scenes: manifest.scenes.length, scriptScenes: scriptSceneCount, assets: assets.length }, remediation: "Produce and attach one validated selected asset for every narrated scene." });
   issues.push(...validateCaptionLayout({ canvas: manifest.canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words }));
-  if (run && factArtifact && selectedAssetsArtifact?.content) {
+  if (run && factArtifact && scriptArtifact && blueprintArtifact && selectedAssetsArtifact?.content) {
     const diagramLabels = (selectedAssetsArtifact.content as { diagramKinds?: Array<{ labels?: string[] }> }).diagramKinds?.flatMap((entry) => entry.labels ?? []) ?? [];
     const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
+    const blueprint = requireContent<{ objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> }>(blueprintArtifact, "lesson-blueprint");
     issues.push(...validateEngineeringContent({ domain: run.domain, script, factPack, diagramLabels }));
     issues.push(...validateMedicalSources({ domain: run.domain, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })) }));
     issues.push(...validateClientAssetRights({ domain: run.domain, assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) }));
+    // Independent pedagogy review on a separately routed verifier (Gemini) so the
+    // planning model can never validate its own lesson structure.
+    const reviewStartedAt = Date.now();
+    const reviewContext = { objective: blueprint.objective, scenes: blueprint.scenes, narration: script.narration, claims: factPack.claims };
+    const reviewResult = await verifyClaims(`Independently review this lesson's pedagogy against its stated objective and verified claims. Return schemaVersion "pedagogy-review/v1", booleans objectiveCovered, oneIdeaPerBeat, readingLevelAppropriate, and issues [{severity,evidence,remediation}]. Use severity "critical" only for a genuine pedagogy defect. Do not rewrite the script or add facts.\n${JSON.stringify(reviewContext)}`);
+    await recordUsage(runId, "qa", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", reviewStartedAt, reviewResult.usage, "pedagogy-review/v1", contextManifest("pedagogy-review-context/v1", [{ role: "script-and-fact-pack", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length }]));
+    issues.push(...pedagogyReviewIssues(PedagogyReviewSchema.parse(reviewResult.value)));
   }
   if (issues.length) {
     await getDb().insert(qaFindings).values(issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
     throw new Error("Release QA failed: " + issues.map((issue) => issue.rule).join(", "));
   }
-  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present", "domain-policy"] } });
+  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present", "domain-policy", "pedagogy-review"] } });
 };
 
 const runReleaseRecord = async (runId: string) => {

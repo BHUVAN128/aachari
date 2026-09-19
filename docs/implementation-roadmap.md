@@ -45,7 +45,9 @@ the specified regression evidence are present.
   count, audio track, codec), pre-render asset-availability fencing, and
   persisted renderer/composition/export-profile provenance. Remaining:
   loudness and pronunciation checks, independent parallel QA branches, and
-  multi-format renders.
+  multi-format renders. A separately routed (Gemini) pedagogy review with a
+  deterministic critical-issue reducer now runs at QA and cannot be satisfied by
+  the planning model that wrote the script.
 
 ## Remaining implementation order
 
@@ -59,8 +61,11 @@ the specified regression evidence are present.
    generation/verification, recorded illustration decisions, and the sound
    plan are implemented; reviewer style/text scoring and solver placement
    remain.
-4. [ ] Implement independent factual/pedagogy, visual/caption, audio, and
-   render-integrity QA branches that converge before approval.
+4. [~] Implement independent factual/pedagogy, visual/caption, audio, and
+   render-integrity QA branches that converge before approval. Deterministic
+   caption/render/domain checks and a separately routed pedagogy review exist;
+   the checks still run sequentially inside one stage rather than as parallel
+   branches.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are

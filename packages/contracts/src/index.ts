@@ -351,6 +351,19 @@ export const QaFindingSchema = z.object({
 });
 export type QaFinding = z.infer<typeof QaFindingSchema>;
 
+export const PedagogyReviewSchema = z.object({
+  schemaVersion: z.literal("pedagogy-review/v1"),
+  objectiveCovered: z.boolean(),
+  oneIdeaPerBeat: z.boolean(),
+  readingLevelAppropriate: z.boolean(),
+  issues: z.array(z.object({
+    severity: z.enum(["info", "warning", "critical"]),
+    evidence: z.string().min(1),
+    remediation: z.string().min(1),
+  })),
+});
+export type PedagogyReview = z.infer<typeof PedagogyReviewSchema>;
+
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
   reviewerId: z.string().min(1),
