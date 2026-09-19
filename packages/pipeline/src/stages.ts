@@ -47,6 +47,7 @@ import {
 import { renderLesson } from "@upcraft/compositor";
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
+import { assertTelemetrySafe } from "./telemetry.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -65,6 +66,17 @@ const routeForStage = (stage: StageName) => {
 };
 export const MAX_ARTIFACT_ATTEMPTS = 3;
 export const isArtifactValidationFailure = (error: unknown) => error instanceof ZodError || error instanceof SyntaxError;
+
+/**
+ * Bounded regeneration policy for invalid model artifacts. A validation failure
+ * may be regenerated with the validation error appended, never promoted by
+ * syntactic repair alone, and never beyond the attempt budget.
+ */
+export const decideInvalidArtifactRetry = (params: { attemptCount: number; error: unknown }) => {
+  if (!isArtifactValidationFailure(params.error)) return { regenerate: false, reason: "not_an_artifact_validation_failure" } as const;
+  if (params.attemptCount >= MAX_ARTIFACT_ATTEMPTS) return { regenerate: false, reason: "attempt_budget_exhausted" } as const;
+  return { regenerate: true, nextAttempt: params.attemptCount + 1, reason: "regenerate_with_validation_error" } as const;
+};
 const resolveSourceText = async (source: { extractedText: string | null; sourceUrl: string | null }) => {
   if (source.extractedText) return { text: source.extractedText, retrievedUrl: source.sourceUrl, retrievalStatus: "provided", contentType: "text/plain", byteSize: Buffer.byteLength(source.extractedText, "utf8"), rawSha256: textSha(source.extractedText) };
   if (!source.sourceUrl) throw new Error("Source has no text or URL");
@@ -168,7 +180,7 @@ const recordUsage = async (runId: string, stage: StageName, provider: string, fa
     outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens,
     inputCharacters: usage.inputCharacters, outputCharacters: usage.outputCharacters,
     costMicrounits: estimateCostMicrounits(provider, usage), pricingVersion,
-    promptVersion, contextManifest: context, latencyMs: Date.now() - startedAt,
+    promptVersion, contextManifest: assertTelemetrySafe(context), latencyMs: Date.now() - startedAt,
   });
 };
 
@@ -535,16 +547,16 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
       await appendRunEvent(runId, stage, "status", `${stage} will retry after a transient provider failure: ${message}`, { code: error.code, status: error.status ?? null });
       throw error;
     }
-    const invalidArtifact = isArtifactValidationFailure(error);
-    if (invalidArtifact && lease.attemptCount < MAX_ARTIFACT_ATTEMPTS) {
+    const invalidArtifact = decideInvalidArtifactRetry({ attemptCount: lease.attemptCount, error });
+    if (invalidArtifact.regenerate) {
       await recordInvalidArtifactAttempt({ runId, stage, inputHash, error, attempt: lease.attemptCount });
       await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", evidence: { message, retryable: true, attempt: lease.attemptCount, validationError: message } });
       await setRunStatus(runId, "queued", { stage });
       await appendRunEvent(runId, stage, "status", `${stage} produced an invalid artifact and will regenerate.`, { attempt: lease.attemptCount, validationError: message });
-      await scheduleStage(runId, stage, `validation-${lease.attemptCount + 1}`);
+      await scheduleStage(runId, stage, `validation-${invalidArtifact.nextAttempt}`);
       return;
     }
-    if (invalidArtifact) await recordInvalidArtifactAttempt({ runId, stage, inputHash, error, attempt: lease.attemptCount });
+    if (isArtifactValidationFailure(error)) await recordInvalidArtifactAttempt({ runId, stage, inputHash, error, attempt: lease.attemptCount });
     await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", evidence: { message, stageInputHash: inputHash } });
     await setRunStatus(runId, "failed", { stage, failureCode: "STAGE_FAILED", failureMessage: message });
     await appendRunEvent(runId, stage, "stage_failed", `${stage} failed: ${message}`, {});

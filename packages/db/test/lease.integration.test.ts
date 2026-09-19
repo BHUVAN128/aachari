@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { artifacts, closeDb, getDb, mediaAssets, sourceDocuments, stageCheckpoints, videoRuns } from "../src/index.ts";
+import { artifacts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns } from "../src/index.ts";
 import { checkpointStage, claimStageLease, heartbeatStageLease, STAGE_LEASE_MS, StageLeaseLostError } from "../../pipeline/src/runs.ts";
 import { getStageInputHash } from "../../pipeline/src/stages.ts";
+import { closeQueue } from "../../pipeline/src/queue.ts";
+import { recoverReservedRuns } from "../../pipeline/src/outbox.ts";
 
 const runId = randomUUID();
 
@@ -123,10 +125,60 @@ describe("stage lease persistence", () => {
     expect((await db.select().from(mediaAssets).where(eq(mediaAssets.runId, mediaRunId))).length).toBe(1);
     await db.delete(videoRuns).where(eq(videoRuns.id, mediaRunId));
   });
+
+  it("recovers a run that crashed mid-stage instead of leaving it running forever", async () => {
+    const db = getDb();
+    const crashRunId = randomUUID();
+    await db.insert(videoRuns).values({
+      id: crashRunId, status: "running", domain: "standard", currentStage: "research",
+      title: "Crash mid-stage fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Crash mid-stage fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "7".repeat(64),
+    });
+    const claimed = await claimStageLease({ runId: crashRunId, stage: "research", inputHash: "8".repeat(64), owner: "crashed-worker" });
+    expect(claimed).not.toBeNull();
+    await db.update(stageCheckpoints).set({ leaseExpiresAt: new Date(Date.now() - 1_000) }).where(eq(stageCheckpoints.runId, crashRunId));
+
+    await recoverReservedRuns();
+
+    const checkpoint = await db.query.stageCheckpoints.findFirst({ where: eq(stageCheckpoints.runId, crashRunId) });
+    expect(checkpoint?.outcome).toBe("failed");
+    expect(checkpoint?.evidence).toMatchObject({ recoveryReason: "expired_stage_lease" });
+    const dispatches = await db.select().from(outbox).where(eq(outbox.key, `${crashRunId}--research--recovery-2`));
+    expect(dispatches.length).toBe(1);
+    await db.delete(videoRuns).where(eq(videoRuns.id, crashRunId));
+  });
+
+  it("marks a stage-less running run visibly failed during recovery", async () => {
+    const db = getDb();
+    const orphanRunId = randomUUID();
+    await db.insert(videoRuns).values({
+      id: orphanRunId, status: "running", domain: "standard", currentStage: null,
+      title: "Orphan running fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Orphan running fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "9".repeat(64),
+    });
+
+    await recoverReservedRuns();
+
+    const recovered = await db.query.videoRuns.findFirst({ where: eq(videoRuns.id, orphanRunId) });
+    expect(recovered?.status).toBe("failed");
+    expect(recovered?.failureCode).toBe("RECOVERY_WITHOUT_STAGE");
+    await db.delete(videoRuns).where(eq(videoRuns.id, orphanRunId));
+  });
 });
 
 afterAll(async () => {
   const db = getDb();
   await db.delete(videoRuns).where(eq(videoRuns.id, runId));
+  await closeQueue();
   await closeDb();
 });
