@@ -18,13 +18,18 @@ the specified regression evidence are present.
   and deterministic Intake Brief policy fences (selected language and
   conservative medical routing) exist. The benchmark regression set is not
   complete.
+- [x] Phase 2 — deterministic scene plans and asset briefs (`scene-plan/v1`,
+  `scene-asset-brief/v1`) derived only from locked blueprint/fact-pack/script,
+  typed semantic SVG diagrams for processes, comparisons, equations, charts,
+  and labelled systems, plus independent label-vocabulary, geometry-overlap,
+  contrast, and overflow validation before a scene asset may advance.
 
 ## Remaining implementation order
 
 1. [ ] Complete Phase 0/1 evidence: crash-mid-stage recovery, duplicate media
    replay, invalid-artifact regeneration, checkpoint input-hash equality, and
    all benchmark routing/intake/provider/telemetry regressions.
-2. [ ] Build scene-plan and asset-brief production plus deterministic semantic
+2. [x] Build scene-plan and asset-brief production plus deterministic semantic
    SVG/Remotion diagrams and their label/geometry/contrast validation.
 3. [ ] Implement optional illustration candidate workflows and a recorded
    sound-plan/fallback artifact after the visual bible locks.

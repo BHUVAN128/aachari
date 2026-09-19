@@ -15,6 +15,6 @@ A submission first creates a frozen input snapshot and database outbox record. I
 
 ## Spatial overlays
 
-The pipeline does not accept final overlay coordinates from an LLM. It stores measured source anchors, solves an affine placement from subject/target anchors, verifies the resolved attachment, and rejects behind-mask relations with no clip path. The solver and its regression tests live in [`packages/pipeline/src/spatial.ts`](packages/pipeline/src/spatial.ts).
+The pipeline does not accept final overlay coordinates from an LLM. Deterministic SVG diagrams emit measured anchors, which the assets stage persists. A deterministic solver in [`packages/pipeline/src/spatial.ts`](packages/pipeline/src/spatial.ts) (covered by [`packages/pipeline/test/spatial.test.ts`](packages/pipeline/test/spatial.test.ts)) solves an affine placement from subject/target anchors, verifies the resolved attachment, and rejects behind-mask relations with no clip path. Wiring the solver into `runSpatialLayout` and the composition is tracked in [the implementation roadmap](docs/implementation-roadmap.md).
 
 Read [the generation process](docs/video-generation-process.md), [quality gates](docs/benchmarkstofocus.md), and [model routing](docs/model-recommendations.md) before changing the pipeline.

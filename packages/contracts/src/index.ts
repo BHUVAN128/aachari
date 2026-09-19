@@ -239,6 +239,49 @@ export type ScenePlan = z.infer<typeof ScenePlanSchema>;
 export const SceneAssetBriefSchema = z.object({ schemaVersion: z.literal("scene-asset-brief/v1"), sceneId: z.string().uuid(), purpose: z.string().min(1), claimIds: z.array(z.string().uuid()), diagram: z.object({ kind: z.enum(["process", "comparison", "equation", "chart", "labelled-system", "none"]), title: z.string().optional(), labels: z.array(z.string()), values: z.array(z.number()).optional() }), illustration: z.object({ required: z.boolean(), prompt: z.string().min(1), role: z.enum(["character", "object", "texture", "none"]), prohibitedText: z.boolean() }) });
 export type SceneAssetBrief = z.infer<typeof SceneAssetBriefSchema>;
 
+export const ScenePlanBundleSchema = z.object({
+  schemaVersion: z.literal("scene-plan-bundle/v1"),
+  plans: z.array(ScenePlanSchema).min(1),
+});
+export type ScenePlanBundle = z.infer<typeof ScenePlanBundleSchema>;
+
+export const SceneAssetBriefBundleSchema = z.object({
+  schemaVersion: z.literal("scene-asset-brief-bundle/v1"),
+  briefs: z.array(SceneAssetBriefSchema).min(1),
+});
+export type SceneAssetBriefBundle = z.infer<typeof SceneAssetBriefBundleSchema>;
+
+export const DiagramKindSchema = z.enum(["process", "comparison", "equation", "chart", "labelled-system", "none"]);
+export type DiagramKind = z.infer<typeof DiagramKindSchema>;
+
+/**
+ * A typed, deterministic diagram description. Labels and values are derived
+ * only from locked source/claim/script text: image models never draw factual
+ * diagrams, and the renderer never invents a label.
+ */
+export const DiagramModelSchema = z.object({
+  schemaVersion: z.literal("diagram-model/v1"),
+  sceneId: z.string().uuid(),
+  kind: DiagramKindSchema,
+  title: z.string().min(1).max(160),
+  /** Human-readable step/axis/entity labels taken verbatim from locked text. */
+  labels: z.array(z.string().min(1).max(60)).max(6),
+  /** Numeric values taken verbatim from locked source text; empty when none exist. */
+  values: z.array(z.number().finite()).max(6),
+  /** Exact locked-text expression for `equation` diagrams. */
+  expression: z.string().min(1).max(240).optional(),
+  /** Locked claim IDs this diagram visualises. */
+  claimIds: z.array(z.string().uuid()),
+});
+export type DiagramModel = z.infer<typeof DiagramModelSchema>;
+
+export const DiagramAnchorSchema = z.object({
+  name: z.string().min(1).max(120),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+export type DiagramAnchorPoint = z.infer<typeof DiagramAnchorSchema>;
+
 export const ResolvedLayerSchema = z.object({
   id: z.string().min(1),
   matrix: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]),

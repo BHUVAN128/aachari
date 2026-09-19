@@ -5,6 +5,8 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { ProjectManifest } from "@upcraft/contracts";
 
+export * from "./diagrams.ts";
+
 export type RenderInput = { title: string; manifest: ProjectManifest; audioUrl: string; outputPath: string };
 
 const entryPoint = fileURLToPath(new URL("./entry.tsx", import.meta.url));

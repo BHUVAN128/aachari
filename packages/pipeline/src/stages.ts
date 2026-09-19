@@ -21,6 +21,7 @@ import {
   artifacts,
   artifactAttempts,
   approvals,
+  assetAnchors,
   getDb,
   intakeAttempts,
   intakeSessions,
@@ -48,6 +49,8 @@ import { renderLesson } from "@upcraft/compositor";
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
+import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans } from "./planning.ts";
+import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -288,27 +291,79 @@ const runVisualBible = async (runId: string) => {
   return saveArtifact({ runId, stage: "visual-bible", role: "visual-bible", schemaVersion: "visual-bible/v1", inputHash: sha(script), content: bible });
 };
 
+export const sceneDiagramArea = (canvas: { width: number; height: number }) => ({
+  x: Math.round(canvas.width * 0.12),
+  y: Math.round(canvas.height * 0.28),
+  width: Math.round(canvas.width * 0.76),
+  height: Math.round(canvas.height * 0.48),
+});
+
 const runAssets = async (runId: string) => {
-  const script = ApprovedScriptSchema.parse(requireContent(await getArtifact(runId, "approved-script"), "approved-script"));
-  const bible = requireContent<{ palette: string[] }>(await getArtifact(runId, "visual-bible"), "visual-bible");
-  const inputHash = sha([script, bible]);
+  const [scriptArtifact, bibleArtifact, blueprintArtifact, factArtifact, run] = await Promise.all([
+    getArtifact(runId, "approved-script"), getArtifact(runId, "visual-bible"),
+    getArtifact(runId, "lesson-blueprint"), getArtifact(runId, "fact-pack"), getRun(runId),
+  ]);
+  const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
+  const bible = VisualBibleSchema.parse(requireContent(bibleArtifact, "visual-bible"));
+  const blueprint = BlueprintSchema.parse(requireContent(blueprintArtifact, "lesson-blueprint"));
+  const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
+  if (!run) throw new Error("Run not found");
+  const inputHash = sha([script, bible, blueprint, factPack]);
   const existing = await getArtifact(runId, "selected-assets");
   if (existing?.inputHash === inputHash) return existing;
-  const sceneLines = [...new Map(script.narration.map((line) => [line.sceneId, line])).values()];
-  const assets = await Promise.all(sceneLines.map(async (scene, index) => {
-    const role = "diagram-" + scene.sceneId;
+
+  const directions = buildSceneDirections({ blueprint, script, factPack });
+  const planned = directions.map((direction) => ({ direction, ...buildSceneAssetBrief(direction) }));
+  const plans = buildScenePlans(planned.map((entry) => entry.model));
+  const briefs = buildSceneAssetBriefs(planned.map((entry) => entry.brief));
+  const scenePlanArtifact = await saveArtifact({ runId, stage: "assets", role: "scene-plans", schemaVersion: plans.schemaVersion, inputHash: sha(blueprint), content: plans, provenance: { provider: "deterministic", model: "scene-plan/v1" } });
+  const briefArtifact = await saveArtifact({ runId, stage: "assets", role: "scene-asset-briefs", schemaVersion: briefs.schemaVersion, inputHash: sha([blueprint, factPack]), content: briefs, provenance: { provider: "deterministic", model: "scene-asset-brief/v1" } });
+
+  const canvas = run.snapshot.aspectRatio === "9:16" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
+  const area = sceneDiagramArea(canvas);
+  const allowedClaimIds = new Set(factPack.claims.map((claim) => claim.id));
+  const lockedTexts = [factPack.claims.map((claim) => claim.text).join("\n"), script.narration.map((line) => `${line.text} ${line.visualAction}`).join("\n"), blueprint.scenes.map((scene) => `${scene.purpose} ${scene.visualBeat}`).join("\n")];
+  const palette: DiagramPalette = { canvasTexture: bible.canvasTexture, palette: bible.palette, typography: { heading: bible.typography.heading, body: bible.typography.body } };
+
+  const assets = await Promise.all(planned.map(async ({ direction, model }) => {
+    const role = "diagram-" + direction.sceneId;
     const existingAsset = (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, role), eq(mediaAssets.selected, true))))[0];
     if (existingAsset) return existingAsset;
-    const color = bible.palette[index % bible.palette.length];
-    if (!color || !/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Visual bible palette must use six-digit hexadecimal colors");
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><rect width="1920" height="1080" fill="#09090b"/><path d="M220 ' + (780 - index * 20) + ' C650 ' + (240 + index * 25) + ',1280 ' + (820 - index * 15) + ',1700 ' + (280 + index * 20) + '" fill="none" stroke="' + color + '" stroke-width="24" stroke-linecap="round"/><circle cx="220" cy="' + (780 - index * 20) + '" r="52" fill="#f8fafc"/><circle cx="1700" cy="' + (280 + index * 20) + '" r="52" fill="#f8fafc"/></svg>';
-    const object = await putPrivateObject({ key: "runs/" + runId + "/assets/scene-" + scene.sceneId + ".svg", body: svg, contentType: "image/svg+xml" });
-    const [asset] = await getDb().insert(mediaAssets).values({ runId, sceneId: scene.sceneId, role, objectKey: object.key, sha256: object.sha256, mimeType: "image/svg+xml", byteSize: object.byteSize, width: 1920, height: 1080, selected: true, provenance: { kind: "typed-svg", sceneId: scene.sceneId, scriptHash: sha(script), optionalIllustration: "omitted" } }).onConflictDoNothing().returning();
+    const rendered = renderAndValidateDiagram({ model, palette, canvas, area, lockedTexts, allowedClaimIds });
+    if (!rendered.passed) {
+      await getDb().insert(qaFindings).values(rendered.issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: { sceneId: direction.sceneId, ...issue.evidence }, remediation: issue.remediation })));
+      throw new Error(`Diagram QA failed for scene ${direction.sceneId}: ${rendered.issues.map((issue) => issue.rule).join(", ")}`);
+    }
+    const object = await putPrivateObject({ key: `runs/${runId}/assets/scene-${direction.sceneId}.svg`, body: rendered.svg, contentType: "image/svg+xml" });
+    const [asset] = await getDb().insert(mediaAssets).values({
+      runId, sceneId: direction.sceneId, role, objectKey: object.key, sha256: object.sha256, mimeType: "image/svg+xml",
+      byteSize: object.byteSize, width: canvas.width, height: canvas.height, selected: true,
+      provenance: {
+        kind: "typed-svg", diagramKind: model.kind, labels: model.labels, diagramModelHash: sha(model),
+        scenePlanArtifactId: scenePlanArtifact.id, sceneAssetBriefArtifactId: briefArtifact.id,
+        scriptHash: sha(script), visualBibleHash: sha(bible), optionalIllustration: "omitted",
+      },
+    }).onConflictDoNothing().returning();
     const stableAsset = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, role), eq(mediaAssets.sha256, object.sha256))))[0];
     if (!stableAsset) throw new Error("Selected asset persistence failed");
+    if (rendered.layout.anchors.length) {
+      await getDb().insert(assetAnchors).values(rendered.layout.anchors.map((anchor) => ({
+        assetId: stableAsset.id, name: anchor.name, x: Math.round(anchor.x * 1_000_000), y: Math.round(anchor.y * 1_000_000),
+        provider: "svg", confidenceMillionths: 1_000_000,
+      }))).onConflictDoNothing();
+    }
     return stableAsset;
   }));
-  const content = { assetIds: assets.map((asset) => asset.id), composition: "typed-scene-svg", visualBibleHash: sha(bible), optionalIllustration: { choice: "omitted", reason: "The locked visual direction is fully represented by deterministic vector assets." } };
+  const content = {
+    assetIds: assets.map((asset) => asset.id),
+    composition: "typed-scene-svg",
+    visualBibleHash: sha(bible),
+    scenePlanArtifactId: scenePlanArtifact.id,
+    sceneAssetBriefArtifactId: briefArtifact.id,
+    diagramKinds: planned.map(({ direction, model }) => ({ sceneId: direction.sceneId, kind: model.kind, labels: model.labels })),
+    // Illustration and sound stay recorded optional fallbacks, never silent omissions.
+    optionalIllustration: { choice: "omitted", reason: "The locked visual direction is fully represented by deterministic vector assets." },
+  };
   return saveArtifact({ runId, stage: "assets", role: "selected-assets", schemaVersion: "selected-assets/v1", inputHash, content });
 };
 
@@ -463,7 +518,7 @@ const stageInputRoles: Partial<Record<StageName, string[]>> = {
   blueprint: ["fact-pack"],
   script: ["lesson-blueprint", "fact-pack"],
   "visual-bible": ["approved-script"],
-  assets: ["approved-script", "visual-bible"],
+  assets: ["approved-script", "visual-bible", "lesson-blueprint", "fact-pack"],
   voiceover: ["approved-script"],
   captions: ["voiceover"],
   "spatial-layout": ["approved-script", "visual-bible", "selected-assets"],
