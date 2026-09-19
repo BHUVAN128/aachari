@@ -16,6 +16,14 @@ describe("token-safe context projections", () => {
     expect(() => sourceEvidenceSegments(map, [{ sourceId, sourceHash: source.sourceHash, segmentIds: ["missing-segment"] }])).toThrow(/not in the locked source map/);
   });
 
+  it("rejects stale evidence when the locked source hash changed", () => {
+    const text = "Locked source text for the evidence map.";
+    const map = buildSourceEvidenceMap([{ id: sourceId, sha256: sha(text), extractedText: text }]);
+    const staleHash = sha("different content");
+    expect(() => sourceEvidenceSegments(map, [{ sourceId, sourceHash: staleHash, segmentIds: [map.sources[0]!.segments[0]!.id] }])).toThrow(/not in the locked source map/);
+    expect(() => sourceEvidenceSegments(map, [{ sourceId: "99999999-9999-4999-8999-999999999999", sourceHash: map.sources[0]!.sourceHash, segmentIds: [] }])).toThrow(/not in the locked source map/);
+  });
+
   it("derives one canonical narration string without duplicated fullText", () => {
     const script = ApprovedScriptSchema.parse({
       schemaVersion: "approved-script/v2",

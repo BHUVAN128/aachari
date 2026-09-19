@@ -52,6 +52,7 @@ import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, re
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
+import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from "./source-url.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
@@ -88,14 +89,12 @@ export const decideInvalidArtifactRetry = (params: { attemptCount: number; error
 const resolveSourceText = async (source: { extractedText: string | null; sourceUrl: string | null }) => {
   if (source.extractedText) return { text: source.extractedText, retrievedUrl: source.sourceUrl, retrievalStatus: "provided", contentType: "text/plain", byteSize: Buffer.byteLength(source.extractedText, "utf8"), rawSha256: textSha(source.extractedText) };
   if (!source.sourceUrl) throw new Error("Source has no text or URL");
-  const url = new URL(source.sourceUrl);
-  if (url.protocol !== "https:") throw new Error("Only HTTPS source URLs are accepted");
+  const url = parseHttpsUrl(source.sourceUrl);
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000), redirect: "follow" });
   if (!response.ok) throw new Error(`Source fetch failed (${response.status})`);
-  const finalUrl = new URL(response.url);
-  if (finalUrl.protocol !== "https:") throw new Error("Source redirects must remain HTTPS");
+  const finalUrl = assertHttpsRedirect(response.url);
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/") && !contentType.includes("html") && !contentType.includes("json")) throw new Error(`Unsupported source content type: ${contentType}`);
+  if (!isSupportedSourceContentType(contentType)) throw new Error(`Unsupported source content type: ${contentType}`);
   const body = await response.text();
   if (Buffer.byteLength(body, "utf8") > 1_000_000) throw new Error("Source exceeds the 1 MB extraction limit");
   const text = body.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

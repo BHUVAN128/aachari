@@ -15,9 +15,12 @@ the specified regression evidence are present.
   and duplicate-media replay tests. Remaining: crash/resume and
   invalid-artifact-regeneration integration tests.
 - [~] Phase 1 — test harness: unit tests, a PostgreSQL lease integration test,
-  and deterministic Intake Brief policy fences (selected language and
-  conservative medical routing) exist. The benchmark regression set is not
-  complete.
+  deterministic Intake Brief policy fences (selected language and conservative
+  medical routing), source-URL HTTPS/content-type policy, provider
+  transient-vs-permanent failure classification, stale-evidence rejection,
+  approval policy (blocked medical publication), and optional-asset fallback
+  decisions now exist. Remaining: PDF extraction, missing-required-asset,
+  source-verification-failure, and DB-backed integration scenarios.
 - [x] Phase 2 — deterministic scene plans and asset briefs (`scene-plan/v1`,
   `scene-asset-brief/v1`) derived only from locked blueprint/fact-pack/script,
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
