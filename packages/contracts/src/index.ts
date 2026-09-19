@@ -380,6 +380,17 @@ export const CreateRunInputSchema = InputSnapshotSchema.omit({
 });
 export type CreateRunInput = z.infer<typeof CreateRunInputSchema>;
 
+export const ViewerOutcomeInputSchema = z.object({
+  schemaVersion: z.literal("viewer-outcome/v1"),
+  kind: z.enum(["retention", "scene-drop", "rewatch", "quiz", "teacher-feedback", "reviewer-feedback"]),
+  segment: z.string().min(1).max(200).optional(),
+  metric: z.string().min(1).max(200),
+  value: z.number().finite(),
+  unit: z.string().min(1).max(40).optional(),
+  detail: z.record(z.string(), z.unknown()).default({}),
+});
+export type ViewerOutcomeInput = z.infer<typeof ViewerOutcomeInputSchema>;
+
 export const RunEventSchema = z.object({
   id: z.string().uuid(),
   runId: z.string().uuid(),

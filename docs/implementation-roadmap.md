@@ -26,6 +26,13 @@ the specified regression evidence are present.
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
   and labelled systems, plus independent label-vocabulary, geometry-overlap,
   contrast, and overflow validation before a scene asset may advance.
+- [~] Phase 7 — feedback and cost baseline: a `viewer_outcomes` table,
+  `viewer-outcome/v1` contract, and authenticated outcomes API record retention,
+  scene drops, rewatches, quiz results, and teacher/reviewer feedback against
+  the immutable run; the accepted-video cost baseline exposes nearest-rank p75
+  and the 125%-of-p75 review threshold with tests. Remaining: wiring the spatial
+  solver into layout/composition and feeding outcomes back into the regression
+  set automatically.
 - [x] Phase 5 — domain policy gates: engineering lessons must state units,
   assumptions, and calculation steps; medical lessons must cite at least one
   authoritative clinical source (clinician approval remains the release
@@ -71,8 +78,9 @@ the specified regression evidence are present.
    duration, render integrity, provenance, and pre-render asset fencing are
    implemented; loudness/pronunciation and multi-format renders remain.
 6. [x] Add engineering, medical-source-quality, and client rights/style gates.
-7. [ ] Wire the spatial solver into layout/composition, then add feedback
-   ingestion and the accepted-video cost-baseline workflow.
+7. [~] Wire the spatial solver into layout/composition, then add feedback
+   ingestion and the accepted-video cost-baseline workflow. Feedback ingestion
+   and the cost baseline are implemented; solver-based layout remains.
 
 ## Completion definition
 

@@ -96,12 +96,20 @@ export const getRunUsageSummary = async (runId: string) => {
   };
 };
 
-const durationBand = (seconds: number) => seconds <= 60 ? "15-60" : seconds <= 180 ? "61-180" : "181-900";
-const percentile75 = (values: number[]) => {
+export const durationBand = (seconds: number) => seconds <= 60 ? "15-60" : seconds <= 180 ? "61-180" : "181-900";
+
+/** Cost baseline from the first 20 accepted videos is required before alerting. */
+export const COST_BASELINE_MIN_SAMPLE = 20;
+export const COST_REVIEW_MULTIPLIER = 1.25;
+
+export const percentile75 = (values: number[]) => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.75) - 1)] ?? 0;
 };
+
+/** The p75 over comparable accepted videos above which a run is reviewed. */
+export const costReviewThreshold = (baselineCosts: number[]) => percentile75(baselineCosts) * COST_REVIEW_MULTIPLIER;
 
 /** Emits a non-blocking review event after a comparable accepted baseline exists. */
 export const evaluateCostReviewAlert = async (runId: string) => {
@@ -128,7 +136,7 @@ export const evaluateCostReviewAlert = async (runId: string) => {
   const baselineCosts = cohortCosts.length >= 5 ? cohortCosts : completed.filter((run) => run.id !== runId).map((run) => byRun.get(run.id)).filter((usage): usage is { cost: number; models: Set<string>; unpriced: false } => usage !== undefined && !usage.unpriced).map((usage) => usage.cost);
   if (baselineCosts.length < 5) return false;
   const p75 = percentile75(baselineCosts);
-  if (currentUsage.cost <= p75 * 1.25) return false;
+  if (currentUsage.cost <= costReviewThreshold(baselineCosts)) return false;
   await appendRunEvent(runId, null, "status", "Cost review alert: accepted-video cost exceeds the comparable baseline p75 by more than 25%.", { costMicrounits: currentUsage.cost, baselineP75Microunits: p75, cohort: cohortKey(current, currentUsage.models), sampleSize: baselineCosts.length, blocking: false });
   return true;
 };

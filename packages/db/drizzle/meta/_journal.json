@@ -36,6 +36,13 @@
       "when": 1789812000000,
       "tag": "0004_reliable_stage_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789834357920,
+      "tag": "0005_magical_wither",
+      "breakpoints": true
     }
   ]
 }

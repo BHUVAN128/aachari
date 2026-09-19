@@ -246,6 +246,19 @@ export const renderOutputs = pgTable("render_outputs", {
   createdAt: createdAt(),
 }, (table) => [uniqueIndex("render_outputs_run_kind_idx").on(table.runId, table.kind)]);
 
+export const viewerOutcomes = pgTable("viewer_outcomes", {
+  id: id(),
+  runId: uuid("run_id").notNull().references(() => videoRuns.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 40 }).notNull(),
+  segment: varchar("segment", { length: 200 }),
+  metric: varchar("metric", { length: 200 }).notNull(),
+  value: integer("value_millionths").notNull(),
+  unit: varchar("unit", { length: 40 }),
+  detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+  recordedBy: varchar("recorded_by", { length: 255 }).notNull(),
+  createdAt: createdAt(),
+}, (table) => [index("viewer_outcomes_run_idx").on(table.runId), index("viewer_outcomes_kind_idx").on(table.kind)]);
+
 export const runEvents = pgTable("run_events", {
   id: id(),
   runId: uuid("run_id").notNull().references(() => videoRuns.id, { onDelete: "cascade" }),
