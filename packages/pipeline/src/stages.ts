@@ -54,6 +54,7 @@ import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAle
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
 import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from "./source-url.ts";
+import { assertClaimVerificationComplete, assertScriptVerificationComplete } from "./verification.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
@@ -247,16 +248,13 @@ const runFactVerification = async (runId: string) => {
   const verificationResult = await verifyClaims(`Independently verify every claim against only its supplied source segments. Return schemaVersion "claim-verification/v2", one evidence item per claim with claimId, sourceId, segmentIds, supported, rationale, and notes. Do not add facts, use uncited sources, or reproduce source text.\n${JSON.stringify(verificationContext)}`);
   await recordUsage(runId, "fact-verification", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", startedAt, verificationResult.usage, "fact-verification/v2", contextManifest("claim-local-evidence/v1", [{ role: "fact-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: verificationContext.evidenceSegments.length }]));
   const verification = ClaimVerificationSchema.parse(verificationResult.value);
-  const factClaims = FactPackSchema.parse(factPack).claims;
-  if (verification.evidence.length !== factClaims.length || new Set(verification.evidence.map((entry) => entry.claimId)).size !== factClaims.length || factClaims.some((claim) => !verification.evidence.some((entry) => entry.claimId === claim.id))) throw new Error("Independent verification did not check every fact-pack claim exactly once");
+  const parsedFactPack = FactPackSchema.parse(factPack);
+  assertClaimVerificationComplete(verification, parsedFactPack);
   for (const entry of verification.evidence) {
-    const claim = factClaims.find((candidate) => candidate.id === entry.claimId);
-    if (!claim || claim.evidence.sourceId !== entry.sourceId) throw new Error(`Independent verification changed evidence identity for claim ${entry.claimId}`);
+    const claim = parsedFactPack.claims.find((candidate) => candidate.id === entry.claimId)!;
     sourceEvidenceSegments(evidenceMap, [{ sourceId: entry.sourceId, sourceHash: claim.evidence.sourceHash, segmentIds: entry.segmentIds }]);
   }
-  const unsupported = verification.evidence.filter((entry) => !entry.supported).map((entry) => entry.claimId);
-  if (unsupported.length) throw new Error(`Independent verification rejected claims: ${unsupported.join(", ")}`);
-  const claimRows = factClaims.map((claim) => ({ runId, sourceId: claim.evidence.sourceId, claim: claim.text, locator: claim.evidence.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: new Date(), verifierModel: process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash" }));
+  const claimRows = parsedFactPack.claims.map((claim) => ({ runId, sourceId: claim.evidence.sourceId, claim: claim.text, locator: claim.evidence.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: new Date(), verifierModel: process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash" }));
   if (claimRows.length && !(await getDb().select({ id: sourceClaims.id }).from(sourceClaims).where(eq(sourceClaims.runId, runId))).length) await getDb().insert(sourceClaims).values(claimRows);
   return saveArtifact({ runId, stage: "fact-verification", role: "fact-verification", schemaVersion: "fact-verification/v2", inputHash: sha(factPack), content: verification });
 };
@@ -286,8 +284,7 @@ const runScript = async (runId: string) => {
   const verificationResult = await verifyClaims(`Independently verify every narration line against only its supplied verified claims. Return schemaVersion "script-verification/v2", one evidence item per line with lineId, supported, unsupportedClaimIds, rationale, and notes. Do not rewrite the script.\n${JSON.stringify(verificationContext)}`);
   await recordUsage(runId, "script", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", verifierStartedAt, verificationResult.usage, "script-verification/v2", contextManifest("line-claim-projection/v1", [{ role: "script-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: script.narration.length }]));
   const verification = ScriptVerificationSchema.parse(verificationResult.value);
-  if (verification.evidence.length !== script.narration.length || new Set(verification.evidence.map((entry) => entry.lineId)).size !== script.narration.length || script.narration.some((line) => !verification.evidence.some((entry) => entry.lineId === line.id))) throw new Error("Independent script verification did not check every script line exactly once");
-  if (verification.evidence.some((entry) => !entry.supported || entry.unsupportedClaimIds.length)) throw new Error("Independent script verification rejected unsupported narration");
+  assertScriptVerificationComplete(verification, script);
   return saveArtifact({ runId, stage: "script", role: "approved-script", schemaVersion: script.schemaVersion, inputHash: sha([blueprint?.sha256, factPack?.sha256]), content: script });
 };
 

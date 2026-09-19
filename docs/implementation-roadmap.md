@@ -18,9 +18,10 @@ the specified regression evidence are present.
   deterministic Intake Brief policy fences (selected language and conservative
   medical routing), source-URL HTTPS/content-type policy, provider
   transient-vs-permanent failure classification, stale-evidence rejection,
-  approval policy (blocked medical publication), and optional-asset fallback
-  decisions now exist. Remaining: PDF extraction, missing-required-asset,
-  source-verification-failure, and DB-backed integration scenarios.
+  approval policy (blocked medical publication), claim/script verification
+  completeness and support reducers (source-verification failure), and
+  optional-asset fallback decisions now exist. Remaining: PDF extraction,
+  missing-required-asset, and DB-backed integration scenarios.
 - [x] Phase 2 — deterministic scene plans and asset briefs (`scene-plan/v1`,
   `scene-asset-brief/v1`) derived only from locked blueprint/fact-pack/script,
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
