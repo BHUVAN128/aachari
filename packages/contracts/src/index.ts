@@ -236,8 +236,31 @@ export const ScenePlanSchema = z.object({
   ),
 });
 export type ScenePlan = z.infer<typeof ScenePlanSchema>;
-export const SceneAssetBriefSchema = z.object({ schemaVersion: z.literal("scene-asset-brief/v1"), sceneId: z.string().uuid(), purpose: z.string().min(1), claimIds: z.array(z.string().uuid()), diagram: z.object({ kind: z.enum(["process", "comparison", "equation", "chart", "labelled-system", "none"]), title: z.string().optional(), labels: z.array(z.string()), values: z.array(z.number()).optional() }), illustration: z.object({ required: z.boolean(), prompt: z.string().min(1), role: z.enum(["character", "object", "texture", "none"]), prohibitedText: z.boolean() }) });
+export const SceneAssetBriefSchema = z.object({ schemaVersion: z.literal("scene-asset-brief/v1"), sceneId: z.string().uuid(), purpose: z.string().min(1), claimIds: z.array(z.string().uuid()), diagram: z.object({ kind: z.enum(["process", "comparison", "equation", "chart", "labelled-system", "none"]), title: z.string().optional(), labels: z.array(z.string()), values: z.array(z.number()).optional() }), illustration: z.object({ required: z.boolean(), prompt: z.string().min(1), role: z.enum(["character", "object", "texture", "none"]), prohibitedText: z.boolean(), reason: z.string().min(1).optional() }) });
 export type SceneAssetBrief = z.infer<typeof SceneAssetBriefSchema>;
+
+export const SoundChoiceSchema = z.object({
+  choice: z.enum(["selected", "omitted"]),
+  reason: z.string().min(1),
+  description: z.string().min(1).optional(),
+  assetId: z.string().uuid().optional(),
+});
+export type SoundChoice = z.infer<typeof SoundChoiceSchema>;
+
+export const SceneSoundPlanSchema = z.object({
+  sceneId: z.string().uuid(),
+  music: SoundChoiceSchema,
+  sfx: z.array(SoundChoiceSchema),
+});
+export type SceneSoundPlan = z.infer<typeof SceneSoundPlanSchema>;
+
+export const SoundPlanSchema = z.object({
+  schemaVersion: z.literal("sound-plan/v1"),
+  /** Recorded ducking parameters so a future mix cannot bury narration. */
+  ducking: z.object({ narrationGainDb: z.number().finite(), musicGainDb: z.number().finite() }),
+  scenes: z.array(SceneSoundPlanSchema).min(1),
+});
+export type SoundPlan = z.infer<typeof SoundPlanSchema>;
 
 export const ScenePlanBundleSchema = z.object({
   schemaVersion: z.literal("scene-plan-bundle/v1"),

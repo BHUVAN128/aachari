@@ -4,6 +4,7 @@ import {
   SceneAssetBriefSchema,
   ScenePlanBundleSchema,
   ScenePlanSchema,
+  SoundPlanSchema,
   type ApprovedScript,
   type Blueprint,
   type DiagramModel,
@@ -169,8 +170,45 @@ export const buildSceneDirections = (params: { blueprint: Blueprint; script: App
     });
 };
 
-/** Builds the typed asset brief and diagram model for one locked scene. */
-export const buildSceneAssetBrief = (direction: SceneDirection): { brief: SceneAssetBrief; model: DiagramModel } => {
+export const ILLUSTRATION_OMITTED_DIAGRAM = "A deterministic vector diagram already treats this scene's factual content; no illustration is needed.";
+export const ILLUSTRATION_OMITTED_NO_ENTITY = "No persistent character or object is referenced by this scene; the locked vector treatment is sufficient.";
+export const SOUND_OMISSION_REASON = "No licensed music/SFX asset is configured, so this optional enrichment is omitted and narration plays solo.";
+
+const characterPattern = /\b(character|person|people|child|children|student|teacher|animal|mascot|robot|guide|narrator|hero|boy|girl)\b/i;
+const significantWords = (text: string) => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((token) => token.length >= 5));
+
+export type IllustrationDecision = { required: boolean; role: SceneAssetBrief["illustration"]["role"]; reason: string; entityId?: string };
+
+/**
+ * Decides whether a scene genuinely benefits from an optional illustration. A
+ * scene is illustrative only when it has no semantic diagram and its locked text
+ * references a persistent character/object from the locked visual bible. This
+ * keeps image generation tied to locked continuity rather than inventing scenes.
+ */
+export const decideIllustration = (params: {
+  direction: SceneDirection;
+  kind: DiagramModel["kind"];
+  persistentEntities: Array<{ id: string; description: string }>;
+}): IllustrationDecision => {
+  if (params.kind !== "none") return { required: false, role: "none", reason: ILLUSTRATION_OMITTED_DIAGRAM };
+  const sceneWords = significantWords(`${params.direction.purpose} ${params.direction.visualBeat} ${params.direction.narrationText}`);
+  const entity = params.persistentEntities.find((candidate) => {
+    if (!characterPattern.test(candidate.description)) return false;
+    return [...significantWords(candidate.description)].some((word) => sceneWords.has(word));
+  });
+  if (!entity) return { required: false, role: "none", reason: ILLUSTRATION_OMITTED_NO_ENTITY };
+  return { required: true, role: "character", reason: `Persistent character "${entity.description}" appears in this locked scene.`, entityId: entity.id };
+};
+
+/**
+ * Builds the typed asset brief and diagram model for one locked scene. The
+ * optional illustration is always an explicit recorded decision, never a silent
+ * omission; factual labels are always drawn by typed SVG, never by an image model.
+ */
+export const buildSceneAssetBrief = (
+  direction: SceneDirection,
+  options: { persistentEntities?: Array<{ id: string; description: string }> } = {},
+): { brief: SceneAssetBrief; model: DiagramModel } => {
   const labels = pickLabels(direction.claimTexts, direction.narrationText);
   const directionText = `${direction.purpose} ${direction.visualBeat} ${direction.visualAction}`;
   const chartPairs = pickChartPairs([...direction.claimTexts, direction.narrationText]);
@@ -187,6 +225,7 @@ export const buildSceneAssetBrief = (direction: SceneDirection): { brief: SceneA
     ...(kind === "equation" && expression ? { expression } : {}),
     claimIds: direction.claimIds,
   });
+  const illustration = decideIllustration({ direction, kind, persistentEntities: options.persistentEntities ?? [] });
   const brief = SceneAssetBriefSchema.parse({
     schemaVersion: "scene-asset-brief/v1",
     sceneId: direction.sceneId,
@@ -198,17 +237,27 @@ export const buildSceneAssetBrief = (direction: SceneDirection): { brief: SceneA
       labels: model.labels,
       ...(model.values.length ? { values: model.values } : {}),
     },
-    // Illustration stays an explicitly recorded optional: factual labels are
-    // always drawn by typed SVG, never by an image model.
     illustration: {
-      required: false,
-      prompt: `Optional illustration supporting the scene purpose: ${direction.purpose}`,
-      role: "none",
+      required: illustration.required,
+      prompt: `Illustration for a scene whose purpose is: ${direction.purpose}. Match the locked visual bible style. Draw no text, labels, numbers, captions, or scientific annotations.`,
+      role: illustration.role,
       prohibitedText: true,
+      reason: illustration.reason,
     },
   });
   return { brief, model };
 };
+
+/** Sound is optional enrichment recorded as an explicit per-scene omission. */
+export const buildSoundPlan = (directions: SceneDirection[]) => SoundPlanSchema.parse({
+  schemaVersion: "sound-plan/v1",
+  ducking: { narrationGainDb: 0, musicGainDb: -18 },
+  scenes: directions.map((direction) => ({
+    sceneId: direction.sceneId,
+    music: { choice: "omitted", reason: SOUND_OMISSION_REASON },
+    sfx: [],
+  })),
+});
 
 /** Scene relations encode layout invariants, so the solver never guesses pixels. */
 export const buildScenePlan = (model: DiagramModel): ScenePlan => {

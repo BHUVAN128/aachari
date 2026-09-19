@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CaptionCue, WordTiming } from "@upcraft/contracts";
 import type { MediaProbe } from "@upcraft/compositor";
-import { compositeCaptionFill, MIN_CAPTION_CONTRAST, validateCaptionLayout, validateRenderIntegrity, validateVoiceAlignment } from "../src/media-qa.ts";
+import { compositeCaptionFill, imageDimensions, MIN_CAPTION_CONTRAST, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "../src/media-qa.ts";
 
 const buildCue = (words: string[], startMs = 0): { cue: CaptionCue; words: WordTiming[] } => {
   const timings = words.map((text, index) => ({ text, startMs: startMs + index * 300, endMs: startMs + index * 300 + 250 }));
@@ -88,5 +88,43 @@ describe("render integrity QA", () => {
 
   it("rejects a silent render", () => {
     expect(validateRenderIntegrity({ probe: { ...probe, audioCodec: null, hasAudio: false }, ...expected }).map((issue) => issue.rule)).toContain("render-audio-missing");
+  });
+});
+
+describe("illustration candidate verification", () => {
+  const png = (width: number, height: number) => {
+    const bytes = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
+    bytes.writeUInt32BE(13, 8);
+    bytes.write("IHDR", 12, "ascii");
+    bytes.writeUInt32BE(width, 16);
+    bytes.writeUInt32BE(height, 20);
+    return bytes;
+  };
+  const jpeg = (width: number, height: number) => {
+    const bytes = Buffer.alloc(20);
+    bytes[0] = 0xff; bytes[1] = 0xd8; bytes[2] = 0xff; bytes[3] = 0xc0;
+    bytes.writeUInt16BE(0x11, 4);
+    bytes[6] = 8;
+    bytes.writeUInt16BE(height, 7);
+    bytes.writeUInt16BE(width, 9);
+    return bytes;
+  };
+
+  it("reads dimensions from the bytes rather than provider metadata", () => {
+    expect(imageDimensions(png(800, 600), "image/png")).toEqual({ width: 800, height: 600 });
+    expect(imageDimensions(jpeg(1024, 768), "image/jpeg")).toEqual({ width: 1024, height: 768 });
+    expect(imageDimensions(Buffer.from("not an image"), "image/png")).toBeUndefined();
+  });
+
+  it("accepts a valid PNG candidate and rejects a mislabeled one", () => {
+    expect(validateIllustrationCandidate({ bytes: png(1024, 1024), mimeType: "image/png" })).toEqual([]);
+    expect(validateIllustrationCandidate({ bytes: png(1024, 1024), mimeType: "image/gif" }).map((issue) => issue.rule)).toContain("illustration-mime-type");
+  });
+
+  it("rejects an undersized or unreadable candidate", () => {
+    const rules = validateIllustrationCandidate({ bytes: png(64, 64), mimeType: "image/png" }).map((issue) => issue.rule);
+    expect(rules).toContain("illustration-dimensions");
+    expect(validateIllustrationCandidate({ bytes: Buffer.from("nope"), mimeType: "image/png" }).map((issue) => issue.rule)).toContain("illustration-dimensions-unreadable");
   });
 });

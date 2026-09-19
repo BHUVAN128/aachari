@@ -117,6 +117,61 @@ export const validateVoiceAlignment = (params: { words: WordTiming[]; measuredDu
   return issues;
 };
 
+/**
+ * Reads intrinsic pixel dimensions directly from the returned bytes without
+ * trusting provider metadata, so a mislabeled or truncated image is visible.
+ */
+export const imageDimensions = (bytes: Buffer, mimeType: string): { width: number; height: number } | undefined => {
+  if (mimeType.includes("png")) {
+    if (bytes.length < 24 || bytes.toString("ascii", 1, 4) !== "PNG") return undefined;
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
+    if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+    let offset = 2;
+    while (offset + 9 < bytes.length) {
+      if (bytes[offset] !== 0xff) { offset += 1; continue; }
+      const marker = bytes[offset + 1] ?? 0;
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+      const length = bytes.readUInt16BE(offset + 2);
+      const isStartOfFrame = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+      if (isStartOfFrame) return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+      offset += 2 + length;
+    }
+    return undefined;
+  }
+  return undefined;
+};
+
+/** Deterministic half of the image-asset gate; style/review remains a human gate. */
+export const validateIllustrationCandidate = (params: {
+  bytes: Buffer;
+  mimeType: string;
+  allowedMimeTypes?: string[];
+  maxBytes?: number;
+  minWidth?: number;
+  minHeight?: number;
+}): MediaIssue[] => {
+  const issues: MediaIssue[] = [];
+  const allowed = params.allowedMimeTypes ?? ["image/png", "image/jpeg"];
+  if (!allowed.includes(params.mimeType)) {
+    issues.push({ rule: "illustration-mime-type", evidence: { mimeType: params.mimeType, allowed }, remediation: "Reject the candidate; only verified image MIME types may attach to a run." });
+  }
+  const maxBytes = params.maxBytes ?? 8_000_000;
+  if (params.bytes.byteLength === 0 || params.bytes.byteLength > maxBytes) {
+    issues.push({ rule: "illustration-bytes", evidence: { byteSize: params.bytes.byteLength, maxBytes }, remediation: "Reject the candidate and regenerate within the byte budget." });
+  }
+  const dimensions = imageDimensions(params.bytes, params.mimeType);
+  if (!dimensions) {
+    issues.push({ rule: "illustration-dimensions-unreadable", evidence: { mimeType: params.mimeType }, remediation: "Reject the candidate; dimensions must be recoverable from the bytes." });
+  } else {
+    if (dimensions.width < (params.minWidth ?? 512) || dimensions.height < (params.minHeight ?? 512)) {
+      issues.push({ rule: "illustration-dimensions", evidence: { ...dimensions, minWidth: params.minWidth ?? 512, minHeight: params.minHeight ?? 512 }, remediation: "Reject the candidate and regenerate at an adequate resolution." });
+    }
+  }
+  return issues;
+};
+
 /** Render integrity measured from the produced file, never from the request. */
 export const validateRenderIntegrity = (params: {
   probe: MediaProbe;

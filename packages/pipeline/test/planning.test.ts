@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApprovedScriptSchema, BlueprintSchema, FactPackSchema } from "@upcraft/contracts";
-import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlan, buildScenePlans, classifyDiagramKind, expectedPlateIds, lockedWordVocabulary, pickChartPairs, pickExpression, pickLabels } from "../src/planning.ts";
+import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlan, buildScenePlans, buildSoundPlan, classifyDiagramKind, decideIllustration, expectedPlateIds, lockedWordVocabulary, pickChartPairs, pickExpression, pickLabels } from "../src/planning.ts";
 import { renderDiagramSvg, type DiagramPalette } from "@upcraft/compositor";
 
 const sourceId = "11111111-1111-4111-8111-111111111111";
@@ -94,4 +94,37 @@ describe("scene direction and asset briefs", () => {
     expect(plan.relations.every((relation) => plateIds.includes(relation.subject) && plateIds.includes(relation.target))).toBe(true);
   });
 });
+});
+
+describe("optional illustration and sound planning", () => {
+  const [direction] = buildSceneDirections({ blueprint, script, factPack });
+
+  it("only recommends an illustration when a locked character is referenced and no diagram exists", () => {
+    const character = { id: "mascot", description: "A friendly student character named Ada" };
+    const withDiagram = decideIllustration({ direction: direction!, kind: "process", persistentEntities: [character] });
+    expect(withDiagram.required).toBe(false);
+    expect(withDiagram.role).toBe("none");
+
+    const noEntity = decideIllustration({ direction: direction!, kind: "none", persistentEntities: [{ id: "leaf", description: "A green leaf object" }] });
+    expect(noEntity.required).toBe(false);
+
+    const concept = { ...direction!, purpose: "Meet the student Ada as she explores", visualBeat: "A student character appears", narrationText: "Ada the student looks at the leaf." };
+    const recommended = decideIllustration({ direction: concept, kind: "none", persistentEntities: [character] });
+    expect(recommended).toMatchObject({ required: true, role: "character", entityId: "mascot" });
+  });
+
+  it("records the illustration decision on the brief instead of a silent omission", () => {
+    const { brief } = buildSceneAssetBrief(direction!, { persistentEntities: [{ id: "mascot", description: "A student character named Ada" }] });
+    expect(brief.illustration.reason).toBeTruthy();
+    expect(brief.illustration.prohibitedText).toBe(true);
+  });
+
+  it("emits an explicit per-scene sound plan with ducking recorded", () => {
+    const plan = buildSoundPlan([direction!]);
+    expect(plan.schemaVersion).toBe("sound-plan/v1");
+    expect(plan.ducking.musicGainDb).toBeLessThan(plan.ducking.narrationGainDb);
+    expect(plan.scenes).toHaveLength(1);
+    expect(plan.scenes[0]!.music.choice).toBe("omitted");
+    expect(plan.scenes[0]!.music.reason).toBeTruthy();
+  });
 });

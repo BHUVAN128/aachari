@@ -23,6 +23,14 @@ the specified regression evidence are present.
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
   and labelled systems, plus independent label-vocabulary, geometry-overlap,
   contrast, and overflow validation before a scene asset may advance.
+- [~] Phase 3 — optional illustration candidates and sound plan: the visual
+  bible's persistent entities drive a deterministic per-scene illustration
+  decision (recorded omission or candidate), candidates are generated in
+  parallel behind capability gating and verified from their bytes (MIME, size,
+  intrinsic dimensions), a recorded `sound-plan/v1` artifact carries ducking
+  parameters and explicit per-scene omission, and any selected AI illustration
+  forces human approval instead of automatic school/college publication.
+  Remaining: reviewer style/text scoring and solver-based placement.
 - [~] Phase 4 — measured media gates: caption wording/line/safe-area/contrast
   validation, audio-duration-vs-alignment checks on the narration MP3, render
   integrity measured from the produced MP4 (dimensions, duration, fps, frame
@@ -38,8 +46,11 @@ the specified regression evidence are present.
    all benchmark routing/intake/provider/telemetry regressions.
 2. [x] Build scene-plan and asset-brief production plus deterministic semantic
    SVG/Remotion diagrams and their label/geometry/contrast validation.
-3. [ ] Implement optional illustration candidate workflows and a recorded
-   sound-plan/fallback artifact after the visual bible locks.
+3. [~] Implement optional illustration candidate workflows and a recorded
+   sound-plan/fallback artifact after the visual bible locks. Candidate
+   generation/verification, recorded illustration decisions, and the sound
+   plan are implemented; reviewer style/text scoring and solver placement
+   remain.
 4. [ ] Implement independent factual/pedagogy, visual/caption, audio, and
    render-integrity QA branches that converge before approval.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile

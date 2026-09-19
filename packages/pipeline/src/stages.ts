@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, max } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
   ApprovedScriptSchema,
@@ -38,9 +38,11 @@ import {
 import {
   assertCapabilities,
   assertStorageAvailable,
+  generateIllustration,
   generateStructuredText,
   getPrivateReadUrl,
   putPrivateObject,
+  resolveCapabilities,
   synthesizeNarration,
   verifyClaims,
   ProviderError,
@@ -50,9 +52,9 @@ import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, re
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
-import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans } from "./planning.ts";
+import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
-import { validateCaptionLayout, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
+import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -320,11 +322,13 @@ const runAssets = async (runId: string) => {
   if (existing?.inputHash === inputHash) return existing;
 
   const directions = buildSceneDirections({ blueprint, script, factPack });
-  const planned = directions.map((direction) => ({ direction, ...buildSceneAssetBrief(direction) }));
+  const planned = directions.map((direction) => ({ direction, ...buildSceneAssetBrief(direction, { persistentEntities: bible.persistentEntities }) }));
   const plans = buildScenePlans(planned.map((entry) => entry.model));
   const briefs = buildSceneAssetBriefs(planned.map((entry) => entry.brief));
+  const soundPlan = buildSoundPlan(directions);
   const scenePlanArtifact = await saveArtifact({ runId, stage: "assets", role: "scene-plans", schemaVersion: plans.schemaVersion, inputHash: sha(blueprint), content: plans, provenance: { provider: "deterministic", model: "scene-plan/v1" } });
   const briefArtifact = await saveArtifact({ runId, stage: "assets", role: "scene-asset-briefs", schemaVersion: briefs.schemaVersion, inputHash: sha([blueprint, factPack]), content: briefs, provenance: { provider: "deterministic", model: "scene-asset-brief/v1" } });
+  const soundPlanArtifact = await saveArtifact({ runId, stage: "assets", role: "sound-plan", schemaVersion: soundPlan.schemaVersion, inputHash: sha([blueprint, script]), content: soundPlan, provenance: { provider: "deterministic", model: "sound-plan/v1" } });
 
   const canvas = run.snapshot.aspectRatio === "9:16" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
   const area = sceneDiagramArea(canvas);
@@ -348,7 +352,7 @@ const runAssets = async (runId: string) => {
       provenance: {
         kind: "typed-svg", diagramKind: model.kind, labels: model.labels, diagramModelHash: sha(model),
         scenePlanArtifactId: scenePlanArtifact.id, sceneAssetBriefArtifactId: briefArtifact.id,
-        scriptHash: sha(script), visualBibleHash: sha(bible), optionalIllustration: "omitted",
+        scriptHash: sha(script), visualBibleHash: sha(bible),
       },
     }).onConflictDoNothing().returning();
     const stableAsset = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, role), eq(mediaAssets.sha256, object.sha256))))[0];
@@ -361,15 +365,52 @@ const runAssets = async (runId: string) => {
     }
     return stableAsset;
   }));
+
+  // Optional illustration enrichment. It is never required: capability absence,
+  // verification failure, or generation failure is recorded as an explicit
+  // omission, and a selected illustration always requires human review before
+  // publication because image-model style/text adherence is a reviewer gate.
+  const illustrationAvailable = resolveCapabilities(run.domain).some((capability) => capability.capability === "illustration" && capability.available);
+  const illustrationModel = process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image";
+  const illustrationDecisions = await Promise.all(planned.map(async ({ direction, brief }): Promise<{ sceneId: string; choice: "selected" | "omitted"; role?: string; assetId?: string; reason: string }> => {
+    if (!brief.illustration.required) return { sceneId: direction.sceneId, choice: "omitted", reason: brief.illustration.reason ?? "No illustration planned for this scene." };
+    const role = "illustration-" + direction.sceneId;
+    const existingIllustration = (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, role), eq(mediaAssets.selected, true))))[0];
+    if (existingIllustration) return { sceneId: direction.sceneId, choice: "selected", role, assetId: existingIllustration.id, reason: brief.illustration.reason ?? "Existing selected illustration reused." };
+    if (!illustrationAvailable) return { sceneId: direction.sceneId, choice: "omitted", reason: "Illustration capability is unavailable; the deterministic vector treatment is used instead." };
+    const startedAt = Date.now();
+    try {
+      const stylePrompt = `${brief.illustration.prompt}\nVisual bible: canvas texture ${bible.canvasTexture}; line style ${bible.lineStyle}; palette ${bible.palette.join(", ")}; body font ${bible.typography.body}.`;
+      const generated = await generateIllustration(stylePrompt);
+      const issues = validateIllustrationCandidate({ bytes: generated.bytes, mimeType: generated.mimeType });
+      await recordUsage(runId, "assets", "gemini", illustrationModel, startedAt, generated.usage, "illustration/v1", contextManifest("scene-asset-brief/v1", [{ role: "scene-asset-briefs", hash: briefArtifact.sha256 ?? sha(briefs), chars: JSON.stringify(brief).length, itemCount: 1 }]), issues.length ? "failed" : "completed", issues.length ? "ILLUSTRATION_VERIFICATION" : undefined);
+      if (issues.length) {
+        await getDb().insert(qaFindings).values(issues.map((issue) => ({ runId, rule: issue.rule, severity: "warning" as const, evidence: { sceneId: direction.sceneId, ...issue.evidence }, remediation: issue.remediation })));
+        return { sceneId: direction.sceneId, choice: "omitted", reason: "Generated illustration failed deterministic verification; deterministic vector treatment retained." };
+      }
+      const dimensions = imageDimensions(generated.bytes, generated.mimeType);
+      if (!dimensions) return { sceneId: direction.sceneId, choice: "omitted", reason: "Illustration dimensions were unreadable; deterministic vector treatment retained." };
+      const object = await putPrivateObject({ key: `runs/${runId}/assets/illustration-${direction.sceneId}`, body: generated.bytes, contentType: generated.mimeType });
+      const [asset] = await getDb().insert(mediaAssets).values({ runId, sceneId: direction.sceneId, role, objectKey: object.key, sha256: object.sha256, mimeType: generated.mimeType, byteSize: object.byteSize, width: dimensions.width, height: dimensions.height, selected: true, provenance: { kind: "illustration", provider: "gemini", model: illustrationModel, prompt: brief.illustration.prompt, prohibitedText: true, briefReason: brief.illustration.reason, sceneAssetBriefArtifactId: briefArtifact.id, visualBibleHash: sha(bible) } }).onConflictDoNothing().returning();
+      const stable = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, role), eq(mediaAssets.sha256, object.sha256))))[0];
+      if (!stable) return { sceneId: direction.sceneId, choice: "omitted", reason: "Illustration persistence failed; deterministic vector treatment retained." };
+      return { sceneId: direction.sceneId, choice: "selected", role, assetId: stable.id, reason: brief.illustration.reason ?? "Selected illustration." };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "illustration generation failed";
+      await recordUsage(runId, "assets", "gemini", illustrationModel, startedAt, { model: illustrationModel }, "illustration/v1", { projection: "scene-asset-brief/v1" }, "failed", error instanceof ProviderError ? error.code : "ILLUSTRATION_GENERATION");
+      return { sceneId: direction.sceneId, choice: "omitted", reason: `Illustration generation failed and was recorded as an omission: ${message}` };
+    }
+  }));
+  const illustrationAssetIds = illustrationDecisions.flatMap((decision) => (decision.assetId ? [decision.assetId] : []));
   const content = {
-    assetIds: assets.map((asset) => asset.id),
+    assetIds: [...assets.map((asset) => asset.id), ...illustrationAssetIds],
     composition: "typed-scene-svg",
     visualBibleHash: sha(bible),
     scenePlanArtifactId: scenePlanArtifact.id,
     sceneAssetBriefArtifactId: briefArtifact.id,
+    soundPlanArtifactId: soundPlanArtifact.id,
     diagramKinds: planned.map(({ direction, model }) => ({ sceneId: direction.sceneId, kind: model.kind, labels: model.labels })),
-    // Illustration and sound stay recorded optional fallbacks, never silent omissions.
-    optionalIllustration: { choice: "omitted", reason: "The locked visual direction is fully represented by deterministic vector assets." },
+    illustrationDecisions,
   };
   return saveArtifact({ runId, stage: "assets", role: "selected-assets", schemaVersion: "selected-assets/v1", inputHash, content });
 };
@@ -460,7 +501,12 @@ const runManifest = async (runId: string) => {
     const blueprintScene = blueprint.scenes.find((scene) => scene.id === sceneId);
     const asset = assets.find((candidate) => candidate.sceneId === sceneId && candidate.role === "diagram-" + sceneId);
     if (!layout || !blueprintScene || !asset) throw new Error("Manifest scene " + sceneId + " is missing layout, blueprint, or selected asset");
-    return { sceneId, layoutArtifactId: layoutArtifact.id, startMs: timing.startMs, endMs: timing.endMs, title: blueprintScene.purpose, visualBeat: timing.visualBeat, layers: layout.layers.map((layer) => ({ id: layer.id, kind: "diagram" as const, assetId: asset.id, zIndex: layer.zIndex, bounds: layer.bounds })) };
+    const illustration = assets.find((candidate) => candidate.sceneId === sceneId && candidate.role === "illustration-" + sceneId);
+    const layers = [
+      ...(illustration ? [{ id: "illustration-" + sceneId, kind: "illustration" as const, assetId: illustration.id, zIndex: 0, bounds: { x: 0, y: 0, width: layoutBundle.canvas.width, height: layoutBundle.canvas.height } }] : []),
+      ...layout.layers.map((layer) => ({ id: layer.id, kind: "diagram" as const, assetId: asset.id, zIndex: layer.zIndex, bounds: layer.bounds })),
+    ];
+    return { sceneId, layoutArtifactId: layoutArtifact.id, startMs: timing.startMs, endMs: timing.endMs, title: blueprintScene.purpose, visualBeat: timing.visualBeat, layers };
   });
   const manifest = ProjectManifestSchema.parse({ schemaVersion: "video-manifest/v1", fps: 30, canvas: layoutBundle.canvas, safeArea, narrationAssetId: voiceover.assetId, words: captions.words, captions: captions.cues, scenes });
   return saveArtifact({ runId, stage: "manifest", role: "project-manifest", schemaVersion: manifest.schemaVersion, inputHash: sha([voiceoverArtifact?.sha256, captionsArtifact?.sha256, layoutArtifact?.sha256]), content: manifest });
@@ -602,7 +648,9 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     await appendRunEvent(runId, stage, "stage_completed", `${stage} completed.`, {});
     const next = nextStage(stage);
     if (next === "approval") {
-      const automatic = run.domain === "standard" && ["school", "college"].includes(run.snapshot.audienceCategory);
+      const illustrationCount = (await getDb().select({ id: mediaAssets.id }).from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true), like(mediaAssets.role, "illustration-%")))).length;
+      if (illustrationCount > 0) await appendRunEvent(runId, "approval", "qa", "Selected AI illustrations require reviewer approval before publication.", { illustrationCount });
+      const automatic = run.domain === "standard" && ["school", "college"].includes(run.snapshot.audienceCategory) && illustrationCount === 0;
       if (automatic) {
         await getDb().insert(approvals).values({ runId, decision: "approved", reviewerId: "automated-release-gates", notes: "Automated standard school/college release gates passed." });
         await setRunStatus(runId, "running", { stage: "final-render" });
