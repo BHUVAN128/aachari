@@ -61,6 +61,7 @@ import { assertClaimVerificationComplete, assertScriptVerificationComplete } fro
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { validateBlueprint } from "./blueprint-qa.ts";
 import { solveSceneLayout } from "./spatial.ts";
+import { buildSrt } from "./render-exports.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { curatedDomainTerms, imageDimensions, validateIllustrationCandidate, validateLoudness, validatePronunciation, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { validateClientStyleApproval } from "./domain-qa.ts";
@@ -590,8 +591,36 @@ const render = async (runId: string, kind: "preview" | "final") => {
   await getDb().update(videoRuns).set({ rendererVersion: renderer }).where(eq(videoRuns.id, runId));
   const bytes = await readFile(outputPath);
   const object = await putPrivateObject({ key: `runs/${runId}/renders/${kind}.mp4`, body: bytes, contentType: "video/mp4" });
-  await getDb().insert(renderOutputs).values({ runId, kind, objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, width: manifest.canvas.width, height: manifest.canvas.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs } });
-  const provenance = { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, frameCount: deriveFrameCount(probe), width: probe.width, height: probe.height, videoCodec: probe.videoCodec, audioCodec: probe.audioCodec, rendererVersion: renderer, composition: "Lesson", exportProfile: "h264/aac/jpeg" };
+  await getDb().insert(renderOutputs).values({ runId, kind, objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, width: probe.width, height: probe.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs } });
+
+  // After the approved master is verified, derive the SRT/transcript and render
+  // the resolution variants in parallel from the same locked composition. The
+  // export-profile provenance is recorded on the final-render artifact.
+  let transcript: { objectKey: string; sha256: string; format: "srt"; byteSize: number } | undefined;
+  const variants: Array<{ kind: string; scale: number; width: number; height: number; durationMs: number; sha256: string; objectKey: string; exportProfile: string }> = [];
+  if (kind === "final") {
+    const renderDir = join(process.env.RENDER_OUTPUT_DIR ?? ".local/renders", runId);
+    const srt = buildSrt(manifest.captions);
+    const srtObject = await putPrivateObject({ key: `runs/${runId}/renders/transcript.srt`, body: srt, contentType: "application/x-subrip" });
+    await getDb().insert(renderOutputs).values({ runId, kind: "transcript-srt", objectKey: srtObject.key, sha256: srtObject.sha256, durationMs: probe.durationMs, width: probe.width, height: probe.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: srtObject.key, sha256: srtObject.sha256, durationMs: probe.durationMs } });
+    transcript = { objectKey: srtObject.key, sha256: srtObject.sha256, format: "srt", byteSize: Buffer.byteLength(srt, "utf8") };
+
+    const exportProfiles = [{ kind: "final-720p", scale: 2 / 3 }];
+    await Promise.all(exportProfiles.map(async (profile) => {
+      const variantPath = join(renderDir, `${profile.kind}.mp4`);
+      await renderLesson({ title: run.title, manifest, audioUrl: await getPrivateReadUrl(voiceover.objectKey, 3_600), outputPath: variantPath, scale: profile.scale });
+      const variantProbe = await probeMedia(variantPath);
+      const variantWidth = Math.round(manifest.canvas.width * profile.scale);
+      const variantHeight = Math.round(manifest.canvas.height * profile.scale);
+      const variantIssues = validateRenderIntegrity({ probe: variantProbe, expectedDurationMs, expectedWidth: variantWidth, expectedHeight: variantHeight, expectedFps: manifest.fps, expectedFrames, requiredVideoCodec: "h264" });
+      if (variantIssues.length) await failWithFindings(runId, `Variant render ${profile.kind}`, variantIssues);
+      const variantObject = await putPrivateObject({ key: `runs/${runId}/renders/${profile.kind}.mp4`, body: await readFile(variantPath), contentType: "video/mp4" });
+      await getDb().insert(renderOutputs).values({ runId, kind: profile.kind, objectKey: variantObject.key, sha256: variantObject.sha256, durationMs: variantProbe.durationMs, width: variantProbe.width, height: variantProbe.height }).onConflictDoUpdate({ target: [renderOutputs.runId, renderOutputs.kind], set: { objectKey: variantObject.key, sha256: variantObject.sha256, durationMs: variantProbe.durationMs } });
+      variants.push({ kind: profile.kind, scale: profile.scale, width: variantProbe.width, height: variantProbe.height, durationMs: variantProbe.durationMs, sha256: variantObject.sha256, objectKey: variantObject.key, exportProfile: `h264/aac/jpeg@${variantProbe.width}x${variantProbe.height}` });
+    }));
+  }
+
+  const provenance = { objectKey: object.key, sha256: object.sha256, durationMs: probe.durationMs, frameCount: deriveFrameCount(probe), width: probe.width, height: probe.height, videoCodec: probe.videoCodec, audioCodec: probe.audioCodec, rendererVersion: renderer, composition: "Lesson", exportProfile: "h264/aac/jpeg", ...(transcript ? { transcript } : {}), ...(variants.length ? { variants } : {}) };
   return saveArtifact({ runId, stage: kind === "preview" ? "preview-render" : "final-render", role: `${kind}-render`, schemaVersion: "render-output/v1", inputHash: sha(manifest), content: provenance });
 };
 

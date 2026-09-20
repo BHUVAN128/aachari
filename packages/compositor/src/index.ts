@@ -8,7 +8,14 @@ import type { ProjectManifest } from "@upcraft/contracts";
 export * from "./diagrams.ts";
 export * from "./probe.ts";
 
-export type RenderInput = { title: string; manifest: ProjectManifest; audioUrl: string; outputPath: string };
+export type RenderInput = {
+  title: string;
+  manifest: ProjectManifest;
+  audioUrl: string;
+  outputPath: string;
+  /** Output scale relative to the locked composition (for resolution variants). */
+  scale?: number;
+};
 
 const entryPoint = fileURLToPath(new URL("./entry.tsx", import.meta.url));
 let cachedBundle: Promise<string> | undefined;
@@ -18,7 +25,7 @@ const getBundle = () => {
   return cachedBundle;
 };
 
-export const renderLesson = async ({ title, manifest, audioUrl, outputPath }: RenderInput) => {
+export const renderLesson = async ({ title, manifest, audioUrl, outputPath, scale }: RenderInput) => {
   await mkdir(dirname(outputPath), { recursive: true });
   const serveUrl = await getBundle();
   const inputProps = { title, manifest, audioUrl };
@@ -33,5 +40,6 @@ export const renderLesson = async ({ title, manifest, audioUrl, outputPath }: Re
     imageFormat: "jpeg",
     concurrency: "50%",
     logLevel: "warn",
+    ...(scale !== undefined ? { scale } : {}),
   });
 };

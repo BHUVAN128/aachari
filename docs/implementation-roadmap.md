@@ -72,9 +72,11 @@ the specified regression evidence are present.
   loudness/true-peak is measured from the stored narration with the renderer's
   bundled ffmpeg `loudnorm` (the bundled build ships `loudnorm`, not `ebur128`),
   and curated-domain-term pronunciation is checked against the locked word
-  alignment. Remaining: multi-format renders and preview-still vision in Tier B.
-  Deep per-domain model QA branches are deferred until Tier B findings justify
-  them.
+  alignment. The final render derives an SRT transcript from the locked caption
+  cues and renders resolution variants in parallel after the approved master,
+  recording export-profile provenance. Remaining: preview-still vision in Tier B
+  and multi-aspect variants. Deep per-domain model QA branches are deferred
+  until Tier B findings justify them.
 
 ## Remaining implementation order
 
@@ -100,8 +102,8 @@ the specified regression evidence are present.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are
-   implemented; loudness/pronunciation gates are implemented; multi-format
-   renders remain.
+   implemented; loudness/pronunciation gates and multi-format (SRT plus
+   resolution-variant) renders are implemented.
 6. [x] Add engineering, medical-source-quality, and client rights/style gates.
 7. [x] Wire the spatial solver into layout/composition, then add feedback
    ingestion and the accepted-video cost-baseline workflow. Feedback ingestion,
