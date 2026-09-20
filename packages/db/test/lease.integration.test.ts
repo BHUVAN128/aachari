@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { artifacts, artifactAttempts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns } from "../src/index.ts";
+import { artifacts, artifactAttempts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns, viewerOutcomes } from "../src/index.ts";
 import { checkpointStage, claimStageLease, heartbeatStageLease, STAGE_LEASE_MS, StageLeaseLostError } from "../../pipeline/src/runs.ts";
 import { decideInvalidArtifactRetry, getStageInputHash, recordInvalidArtifactAttempt, validationFeedback } from "../../pipeline/src/stages.ts";
+import { collectRegressionFixtures } from "../../pipeline/src/feedback-regression.ts";
 import { closeQueue } from "../../pipeline/src/queue.ts";
 import { recoverReservedRuns } from "../../pipeline/src/outbox.ts";
 
@@ -207,6 +208,30 @@ describe("stage lease persistence", () => {
     expect(rows[0]!.status).toBe("invalid");
     expect(decideInvalidArtifactRetry({ attemptCount: 3, error: new SyntaxError("malformed JSON") })).toEqual({ regenerate: false, reason: "attempt_budget_exhausted" });
     await db.delete(videoRuns).where(eq(videoRuns.id, budgetRunId));
+  });
+
+  it("turns persisted weak viewer outcomes into regression fixtures", async () => {
+    const db = getDb();
+    const feedbackRunId = randomUUID();
+    await db.insert(videoRuns).values({
+      id: feedbackRunId, status: "completed", domain: "standard", title: "Feedback regression fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Feedback regression fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "f".repeat(64),
+    });
+    await db.insert(viewerOutcomes).values([
+      { runId: feedbackRunId, kind: "retention", metric: "intro-retention", value: 400_000, recordedBy: "viewer" },
+      { runId: feedbackRunId, kind: "scene-drop", segment: "scene-2", metric: "drop-at-2s", value: 450_000, recordedBy: "viewer" },
+      { runId: feedbackRunId, kind: "rewatch", metric: "rewatch-count", value: 3_000_000, recordedBy: "viewer" },
+    ]);
+    const fixtures = await collectRegressionFixtures();
+    const forRun = fixtures.filter((fixture) => fixture.runId === feedbackRunId);
+    expect(forRun.map((fixture) => fixture.metric).sort()).toEqual(["drop-at-2s", "intro-retention"]);
+    expect(forRun.every((fixture) => fixture.schemaVersion === "regression-fixture/v1")).toBe(true);
+    await db.delete(videoRuns).where(eq(videoRuns.id, feedbackRunId));
   });
 
   it("marks a stage-less running run visibly failed during recovery", async () => {

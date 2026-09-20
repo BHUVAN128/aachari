@@ -34,7 +34,7 @@ the specified regression evidence are present.
   typed semantic SVG diagrams for processes, comparisons, equations, charts,
   and labelled systems, plus independent label-vocabulary, geometry-overlap,
   contrast, and overflow validation before a scene asset may advance.
-- [~] Phase 7 — feedback and cost baseline: a `viewer_outcomes` table,
+- [x] Phase 7 — feedback and cost baseline: a `viewer_outcomes` table,
   `viewer-outcome/v1` contract, and authenticated outcomes API record retention,
   scene drops, rewatches, quiz results, and teacher/reviewer feedback against
   the immutable run; the accepted-video cost baseline exposes nearest-rank p75
@@ -43,7 +43,9 @@ the specified regression evidence are present.
   scene plans and solves each scene's multi-layer `resolved-layout/v1`, attaching
   an optional illustration to a measured diagram anchor with
   `solveAttachment`/`assertAttachment`; `runManifest` consumes the solver layers.
-  Remaining: feeding outcomes back into the regression set automatically.
+  Weak persisted outcomes are converted automatically into typed
+  `regression-fixture/v1` records (`feedback-regression.ts`, the
+  `feedback:fixtures` script, and a DB-backed integration test).
 - [x] Phase 5 — domain policy gates: engineering lessons must state units,
   assumptions, and calculation steps; medical lessons must cite at least one
   authoritative clinical source (clinician approval remains the release
@@ -88,9 +90,10 @@ the specified regression evidence are present.
    SVG/Remotion diagrams and their label/geometry/contrast validation.
 3. [~] Implement optional illustration candidate workflows and a recorded
    sound-plan/fallback artifact after the visual bible locks. Candidate
-   generation/verification, recorded illustration decisions, and the sound
-   plan are implemented; reviewer style/text scoring and solver placement
-   remain.
+   generation/verification, recorded illustration decisions, solver placement,
+   and the sound plan are implemented. Reviewer style/text scoring and
+   multi-candidate illustration evaluation remain deferred by the governing
+   documents (one candidate or a recorded omission is sufficient).
 4. [x] Implement tiered release QA that converges before approval. `qa-branches.ts`
    provides pure deterministic checks (structural/policy, visual/caption,
    spatial-solve, audio/render-integrity) composed by `deterministicQa` into
@@ -100,7 +103,7 @@ the specified regression evidence are present.
    visual verdict, re-probes stored media bytes, and gates approval on both tiers
    with no critical finding. Deep per-domain model QA branches are deferred until
    measured Tier B findings justify them.
-5. [~] Add measured voice/caption/render gates, renderer and export-profile
+5. [x] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are
    implemented; loudness/pronunciation gates and multi-format (SRT plus
