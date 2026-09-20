@@ -73,41 +73,19 @@ import { curatedDomainTerms, imageDimensions, validateIllustrationCandidate, val
 import { validateClientStyleApproval } from "./domain-qa.ts";
 import { audioRenderQa, consolidatedReviewQa, convergeQaTiers, deterministicQa, spatialQa, structuralQa, visualQa, type QaTierResult } from "./qa-branches.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
+import { factPackJsonSchema } from "./prompts/fact-pack.ts";
+import { blueprintJsonSchema } from "./prompts/blueprint.ts";
+import { scriptJsonSchema } from "./prompts/script.ts";
+import { scriptVerificationJsonSchema } from "./prompts/script-verification.ts";
+import { visualBibleJsonSchema } from "./prompts/visual-bible.ts";
+import { resolveStageRoute, stageRoute } from "./routing.ts";
+import { getArtifact, saveArtifact, recordInvalidArtifactAttempt, validationFeedback, requireContent, missingRenderAssets } from "./artifacts/store.ts";
+import { sha, textSha } from "./artifacts/hashing.ts";
+import { recordUsage, failWithFindings } from "./usage.ts";
 
 type Json = Record<string, unknown>;
-const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const textSha = (value: string) => createHash("sha256").update(value).digest("hex");
-const factPackJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["fact-pack/v2"] }, claims: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, text: { type: "string" }, evidence: { type: "object", additionalProperties: false, properties: { sourceId: { type: "string" }, sourceHash: { type: "string" }, segmentIds: { type: "array", items: { type: "string" } }, locator: { type: "string" } }, required: ["sourceId", "sourceHash", "segmentIds", "locator"] }, critical: { type: "boolean" } }, required: ["id", "text", "evidence", "critical"] } }, caveats: { type: "array", items: { type: "object", additionalProperties: false, properties: { text: { type: "string" }, evidence: { type: "object", additionalProperties: false, properties: { sourceId: { type: "string" }, sourceHash: { type: "string" }, segmentIds: { type: "array", items: { type: "string" } }, locator: { type: "string" } }, required: ["sourceId", "sourceHash", "segmentIds", "locator"] } }, required: ["text"] } } }, required: ["schemaVersion", "claims", "caveats"] } as Record<string, unknown>;
-const blueprintJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["lesson-blueprint/v2"] }, objective: { type: "string" }, prerequisites: { type: "array", minItems: 1, items: { type: "string" } }, hook: { type: "string" }, recap: { type: "string" }, knowledgeCheck: { type: "object", additionalProperties: false, properties: { question: { type: "string" }, options: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } }, answerIndex: { type: "integer", minimum: 0 } }, required: ["question", "options", "answerIndex"] }, scenes: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, order: { type: "integer" }, purpose: { type: "string" }, claimIds: { type: "array", minItems: 1, items: { type: "string" } }, visualBeat: { type: "string" } }, required: ["id", "order", "purpose", "claimIds", "visualBeat"] } } }, required: ["schemaVersion", "objective", "prerequisites", "hook", "recap", "scenes"] } as Record<string, unknown>;
-const scriptJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["approved-script/v2"] }, narration: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, sceneId: { type: "string" }, text: { type: "string" }, claimIds: { type: "array", items: { type: "string" } }, visualAction: { type: "string" } }, required: ["id", "sceneId", "text", "claimIds", "visualAction"] } } }, required: ["schemaVersion", "narration"] } as Record<string, unknown>;
-const scriptVerificationJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["script-verification/v2"] }, evidence: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { lineId: { type: "string" }, supported: { type: "boolean" }, unsupportedClaimIds: { type: "array", items: { type: "string" } }, rationale: { type: "string" } }, required: ["lineId", "supported", "unsupportedClaimIds", "rationale"] } }, notes: { type: "array", items: { type: "string" } } }, required: ["schemaVersion", "evidence", "notes"] } as Record<string, unknown>;
-const visualBibleJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["visual-bible/v1"] }, canvasTexture: { type: "string" }, lineStyle: { type: "string" }, palette: { type: "array", minItems: 2, items: { type: "string" } }, typography: { type: "object", additionalProperties: false, properties: { heading: { type: "string" }, body: { type: "string" }, caption: { type: "string" } }, required: ["heading", "body", "caption"] }, captionSafeArea: { type: "object", additionalProperties: false, properties: { top: { type: "number" }, right: { type: "number" }, bottom: { type: "number" }, left: { type: "number" } }, required: ["top", "right", "bottom", "left"] }, persistentEntities: { type: "array", items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, description: { type: "string" } }, required: ["id", "description"] } }, camera: { type: "object", additionalProperties: false, properties: { behavior: { type: "string" }, transitions: { type: "array", items: { type: "string" } } }, required: ["behavior", "transitions"] }, prohibitedVisualPatterns: { type: "array", items: { type: "string" } } }, required: ["schemaVersion", "canvasTexture", "lineStyle", "palette", "typography", "captionSafeArea", "persistentEntities", "camera", "prohibitedVisualPatterns"] } as Record<string, unknown>;
-/**
- * Resolves the frozen route for a stage before it starts. `undefined` marks a
- * deterministic stage, which keeps the `deterministic` provenance shape older
- * records already use.
- */
-export const resolveStageRoute = (stage: StageName): ModelRoute | undefined => {
-  const capability = STAGE_CAPABILITIES[stage];
-  return capability ? resolveModelRoute(capability) : undefined;
-};
-const stageRoute = resolveStageRoute;
-const deterministicProvenance = { provider: "deterministic", model: "repository-code" };
-const routeProvenance = (route: ModelRoute | undefined) => route
-  ? { provider: route.provider, model: route.model, modelRef: route.modelRef, configVersion: route.configVersion, resolvedFrom: route.resolvedFrom }
-  : deterministicProvenance;
-
-/**
- * A manifest layer that names a selected asset which is not available at render
- * time must block the render; a placeholder would silently ship a broken visual.
- */
-export const missingRenderAssets = (
-  layers: Array<{ id: string; assetId?: string | undefined }>,
-  availableAssetIds: Iterable<string>,
-) => {
-  const available = new Set(availableAssetIds);
-  return layers.filter((layer) => layer.assetId && !available.has(layer.assetId));
-};
+export { resolveStageRoute };
+export { getArtifact, saveArtifact, recordInvalidArtifactAttempt, validationFeedback, requireContent, missingRenderAssets };
 export const MAX_ARTIFACT_ATTEMPTS = 3;
 export const isArtifactValidationFailure = (error: unknown) => error instanceof ZodError || error instanceof SyntaxError;
 
@@ -140,80 +118,6 @@ const resolveSourceText = async (source: { extractedText: string | null; sourceU
 const nextStage = (stage: StageName): StageName | undefined => {
   const index = STAGE_ORDER.indexOf(stage);
   return index >= 0 ? STAGE_ORDER[index + 1] : undefined;
-};
-
-const getArtifact = async (runId: string, role: string) => {
-  const db = getDb();
-  return db.query.artifacts.findFirst({
-    where: and(eq(artifacts.runId, runId), eq(artifacts.role, role), eq(artifacts.status, "valid")),
-    orderBy: [desc(artifacts.version), desc(artifacts.createdAt)],
-  });
-};
-
-const saveArtifact = async (params: { runId: string; stage: StageName; role: string; schemaVersion: string; content: Json; inputHash: string; provenance?: Json }) => {
-  const db = getDb();
-  const existing = await getArtifact(params.runId, params.role);
-  if (existing?.inputHash === params.inputHash) return existing;
-  const version = existing ? existing.version + 1 : 1;
-  const route = stageRoute(params.stage);
-  const provenance = routeProvenance(route);
-  const [artifact] = await db.insert(artifacts).values({
-    runId: params.runId, stage: params.stage, role: params.role, version, status: "valid",
-    schemaVersion: params.schemaVersion, content: params.content, inputHash: params.inputHash,
-    sha256: sha(params.content), provenance: { ...provenance, ...(params.provenance ?? {}) }, validatedAt: new Date(),
-  }).returning();
-  if (!artifact) throw new Error("Artifact persistence failed");
-  if (existing) await db.update(artifacts).set({ status: "superseded" }).where(eq(artifacts.id, existing.id));
-  await db.insert(artifactAttempts).values({ artifactId: artifact.id, attempt: 1, inputHash: params.inputHash, outputHash: artifact.sha256 ?? undefined, schemaVersion: params.schemaVersion, provider: route?.provider ?? "deterministic", model: route?.model ?? "repository-code", promptVersion: `${params.stage}/v1`, outcome: "validated", validationEvidence: { schemaVersion: params.schemaVersion } });
-  return artifact;
-};
-
-export const recordInvalidArtifactAttempt = async (params: { runId: string; stage: StageName; inputHash: string; error: unknown; attempt: number }) => {
-  const db = getDb();
-  const role = `${params.stage}-attempt`;
-  const existing = await db.select({ version: max(artifacts.version) }).from(artifacts).where(and(eq(artifacts.runId, params.runId), eq(artifacts.stage, params.stage), eq(artifacts.role, role)));
-  const version = (existing[0]?.version ?? 0) + 1;
-  const message = params.error instanceof Error ? params.error.message.slice(0, 1_000) : "Artifact validation failed.";
-  const [artifact] = await db.insert(artifacts).values({
-    runId: params.runId, stage: params.stage, role, version, status: "invalid", schemaVersion: `${params.stage}/attempt`, inputHash: params.inputHash,
-    provenance: { failure: "artifact-validation", attempt: params.attempt },
-  }).returning({ id: artifacts.id });
-  if (!artifact) return;
-  await db.insert(artifactAttempts).values({
-    artifactId: artifact.id, attempt: params.attempt, inputHash: params.inputHash, schemaVersion: `${params.stage}/attempt`,
-    provider: stageRoute(params.stage)?.provider ?? "deterministic", model: stageRoute(params.stage)?.model ?? "repository-code", promptVersion: `${params.stage}/v1`, outcome: "invalid",
-    errorCode: "ARTIFACT_VALIDATION", errorMessage: message, validationEvidence: { message, retryable: params.attempt < 3 },
-  });
-};
-
-export const validationFeedback = async (runId: string, stage: StageName) => {
-  const db = getDb();
-  const invalids = await db.select({ id: artifacts.id }).from(artifacts).where(and(eq(artifacts.runId, runId), eq(artifacts.stage, stage), eq(artifacts.status, "invalid")));
-  if (!invalids.length) return "";
-  const attempts = await db.select({ errorMessage: artifactAttempts.errorMessage, validationEvidence: artifactAttempts.validationEvidence }).from(artifactAttempts).where(inArray(artifactAttempts.artifactId, invalids.map((artifact) => artifact.id))).orderBy(desc(artifactAttempts.createdAt)).limit(3);
-  if (!attempts.length) return "";
-  return `Previous bounded artifact attempts failed validation. Correct these transport/schema defects without inventing content:\n${attempts.map((attempt) => `- ${attempt.errorMessage ?? JSON.stringify(attempt.validationEvidence)}`).join("\n")}\n`;
-};
-
-const requireContent = <T extends Json>(artifact: { content: Json | null } | undefined, role: string) => {
-  if (!artifact?.content) throw new Error(`Required valid artifact missing: ${role}`);
-  return artifact.content as T;
-};
-
-const failWithFindings = async (runId: string, scope: string, findings: Array<{ rule: string; evidence: Record<string, unknown>; remediation: string }>): Promise<never> => {
-  await getDb().insert(qaFindings).values(findings.map((finding) => ({ runId, rule: finding.rule, severity: "critical" as const, evidence: finding.evidence, remediation: finding.remediation })));
-  throw new Error(`${scope} failed: ${findings.map((finding) => finding.rule).join(", ")}`);
-};
-
-const recordUsage = async (runId: string, stage: StageName, provider: string, model: string, startedAt: number, usage: ProviderUsageSnapshot = {}, promptVersion = `${stage}/v2`, context = {}, outcome = "completed", errorCode?: string) => {
-  await getDb().insert(providerUsage).values({
-    runId, stage, provider, model: usage.model ?? model, requestId: usage.requestId,
-    outcome, errorCode, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens,
-    outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens,
-    inputCharacters: usage.inputCharacters, outputCharacters: usage.outputCharacters,
-    costMicrounits: estimateCostMicrounits(provider, usage), pricingVersion: PRICING_VERSION,
-    promptVersion, contextManifest: assertTelemetrySafe(context), latencyMs: Date.now() - startedAt,
-  });
 };
 
 /**
