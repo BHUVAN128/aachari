@@ -20,8 +20,9 @@ the specified regression evidence are present.
   transient-vs-permanent failure classification, stale-evidence rejection,
   approval policy (blocked medical publication), claim/script verification
   completeness and support reducers (source-verification failure), and
-  optional-asset fallback decisions now exist. Remaining: PDF extraction,
-  missing-required-asset, and DB-backed integration scenarios.
+  optional-asset fallback decisions now exist. Deterministic text-layer PDF
+  extraction (byte/character limits plus raw-byte hash) has regression coverage.
+  Remaining: missing-required-asset and DB-backed integration scenarios.
 - [x] Stage 3 blueprint contract — `lesson-blueprint/v2` now carries the hook,
   explanation arc, recap, and optional knowledge-check required by §4, and
   `blueprint-qa.ts` deterministically validates objective coverage,
