@@ -51,11 +51,13 @@ the specified regression evidence are present.
   validation, audio-duration-vs-alignment checks on the narration MP3, render
   integrity measured from the produced MP4 (dimensions, duration, fps, frame
   count, audio track, codec), pre-render asset-availability fencing, and
-  persisted renderer/composition/export-profile provenance. Remaining:
-  loudness and pronunciation checks, independent parallel QA branches, and
-  multi-format renders. A separately routed (Gemini) pedagogy review with a
-  deterministic critical-issue reducer now runs at QA and cannot be satisfied by
-  the planning model that wrote the script.
+  persisted renderer/composition/export-profile provenance. QA now runs as four
+  independent concurrent branches (structural/policy, separately routed Gemini
+  pedagogy, visual/caption, audio/render-integrity) that converge through a pure
+  reducer before approval; the visual branch re-renders the typed diagram models
+  persisted on `selected-assets`, and the audio/render branch re-probes the
+  stored narration and preview bytes instead of the pre-render request.
+  Remaining: loudness and pronunciation checks and multi-format renders.
 
 ## Remaining implementation order
 
@@ -69,11 +71,13 @@ the specified regression evidence are present.
    generation/verification, recorded illustration decisions, and the sound
    plan are implemented; reviewer style/text scoring and solver placement
    remain.
-4. [~] Implement independent factual/pedagogy, visual/caption, audio, and
-   render-integrity QA branches that converge before approval. Deterministic
-   caption/render/domain checks and a separately routed pedagogy review exist;
-   the checks still run sequentially inside one stage rather than as parallel
-   branches.
+4. [x] Implement independent factual/pedagogy, visual/caption, audio, and
+   render-integrity QA branches that converge before approval. `qa-branches.ts`
+   provides pure structural/policy, visual/caption, audio/render-integrity, and
+   pedagogy reducers; `runQa` starts the separately routed Gemini review, runs
+   the deterministic branches beside it, re-renders diagram models for an
+   independent visual verdict, re-probes stored media bytes, and gates approval
+   on `convergeQaBranches` reporting all four branches with no critical finding.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are

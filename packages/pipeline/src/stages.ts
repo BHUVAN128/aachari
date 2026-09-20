@@ -8,6 +8,7 @@ import {
   ApprovedScriptSchema,
   BlueprintSchema,
   ClaimVerificationSchema,
+  DiagramModelSchema,
   FactPackSchema,
   PedagogyReviewSchema,
   ProjectManifestSchema,
@@ -41,6 +42,7 @@ import {
   assertStorageAvailable,
   generateIllustration,
   generateStructuredText,
+  getPrivateObject,
   getPrivateReadUrl,
   putPrivateObject,
   resolveCapabilities,
@@ -49,7 +51,7 @@ import {
   ProviderError,
   type ProviderUsageSnapshot,
 } from "@upcraft/providers";
-import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, renderLesson } from "@upcraft/compositor";
+import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, renderLesson, type MediaProbe } from "@upcraft/compositor";
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
@@ -57,8 +59,9 @@ import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from
 import { assertClaimVerificationComplete, assertScriptVerificationComplete } from "./verification.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
-import { imageDimensions, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
-import { pedagogyReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "./domain-qa.ts";
+import { imageDimensions, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
+import { validateClientStyleApproval } from "./domain-qa.ts";
+import { audioRenderQa, convergeQaBranches, pedagogyQa, structuralQa, visualQa, type QaBranchResult } from "./qa-branches.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -408,6 +411,9 @@ const runAssets = async (runId: string) => {
     sceneAssetBriefArtifactId: briefArtifact.id,
     soundPlanArtifactId: soundPlanArtifact.id,
     diagramKinds: planned.map(({ direction, model }) => ({ sceneId: direction.sceneId, kind: model.kind, labels: model.labels })),
+    // Persist the typed models so the independent visual QA branch can
+    // re-render and re-validate geometry/vocabulary from locked evidence.
+    diagramModels: planned.map(({ model }) => model),
     illustrationDecisions,
   };
   return saveArtifact({ runId, stage: "assets", role: "selected-assets", schemaVersion: "selected-assets/v1", inputHash, content });
@@ -536,48 +542,99 @@ const render = async (runId: string, kind: "preview" | "final") => {
   return saveArtifact({ runId, stage: kind === "preview" ? "preview-render" : "final-render", role: `${kind}-render`, schemaVersion: "render-output/v1", inputHash: sha(manifest), content: provenance });
 };
 
+const ZERO_MEDIA_PROBE: MediaProbe = { durationMs: 0, width: 0, height: 0, fps: 0, videoCodec: "", audioCodec: null, hasAudio: false };
+
+/** Probes a stored private object through a temp file; nothing trusts the request. */
+const probePrivateMedia = async <T>(params: { objectKey: string; fileName: string; probe: (path: string) => Promise<T> }): Promise<T> => {
+  const dir = await mkdtemp(join(tmpdir(), "upcraft-qa-"));
+  try {
+    const path = join(dir, params.fileName);
+    await writeFile(path, await getPrivateObject(params.objectKey));
+    return await params.probe(path);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
 const runQa = async (runId: string) => {
-  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact, blueprintArtifact] = await Promise.all([
+  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact, blueprintArtifact, bibleArtifact] = await Promise.all([
     getArtifact(runId, "caption-timings"), getArtifact(runId, "project-manifest"), getArtifact(runId, "preview-render"),
     getArtifact(runId, "fact-pack"), getArtifact(runId, "approved-script"), getArtifact(runId, "resolved-layout"),
     getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
     getRun(runId), getDb().select().from(sourceDocuments).where(eq(sourceDocuments.runId, runId)), getArtifact(runId, "selected-assets"),
-    getArtifact(runId, "lesson-blueprint"),
+    getArtifact(runId, "lesson-blueprint"), getArtifact(runId, "visual-bible"),
   ]);
   const captions = requireContent<{ words: WordTiming[]; cues: Array<{ wordIndexes: number[] }> }>(captionArtifact, "caption-timings");
   const manifest = ProjectManifestSchema.parse(requireContent(manifestArtifact, "project-manifest"));
   const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
-  const issues: Array<{ rule: string; evidence: Record<string, unknown>; remediation: string }> = [];
-  const badWords = captions.words.filter((word, index) => word.endMs <= word.startMs || (index > 0 && word.startMs < (captions.words[index - 1]?.endMs ?? 0)));
-  if (badWords.length) issues.push({ rule: "caption-monotonicity", evidence: { count: badWords.length }, remediation: "Rebuild caption timings from the validated narration alignment." });
-  if (!previewArtifact) issues.push({ rule: "preview-render-present", evidence: {}, remediation: "Render the preview from the locked project manifest." });
-  const requiredArtifacts: Array<[string, unknown]> = [["fact-pack", factArtifact], ["approved-script", scriptArtifact], ["resolved-layout", layoutArtifact], ["project-manifest", manifestArtifact], ["lesson-blueprint", blueprintArtifact]];
+  const bible = VisualBibleSchema.parse(requireContent(bibleArtifact, "visual-bible"));
+  const requiredArtifacts: Array<[string, unknown]> = [["fact-pack", factArtifact], ["approved-script", scriptArtifact], ["resolved-layout", layoutArtifact], ["project-manifest", manifestArtifact], ["lesson-blueprint", blueprintArtifact], ["visual-bible", bibleArtifact]];
   const missingArtifacts = requiredArtifacts.filter(([, artifact]) => !artifact).map(([role]) => role);
-  if (missingArtifacts.length) issues.push({ rule: "artifact-completeness", evidence: { missing: missingArtifacts }, remediation: "Restore the missing validated upstream artifact before release." });
-  if (!captions.cues.length || captions.cues.some((cue) => cue.wordIndexes.some((index) => index >= captions.words.length))) issues.push({ rule: "caption-index-integrity", evidence: {}, remediation: "Rebuild captions with indexes into the locked word alignment." });
   const scriptSceneCount = new Set(script.narration.map((line) => line.sceneId)).size;
-  if (manifest.scenes.length !== scriptSceneCount || manifest.scenes.some((scene) => !assets.some((asset) => asset.id === scene.layers.find((layer) => layer.assetId)?.assetId))) issues.push({ rule: "scene-asset-completeness", evidence: { scenes: manifest.scenes.length, scriptScenes: scriptSceneCount, assets: assets.length }, remediation: "Produce and attach one validated selected asset for every narrated scene." });
-  issues.push(...validateCaptionLayout({ canvas: manifest.canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words }));
-  if (run && factArtifact && scriptArtifact && blueprintArtifact && selectedAssetsArtifact?.content) {
-    const diagramLabels = (selectedAssetsArtifact.content as { diagramKinds?: Array<{ labels?: string[] }> }).diagramKinds?.flatMap((entry) => entry.labels ?? []) ?? [];
-    const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
-    const blueprint = requireContent<{ objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> }>(blueprintArtifact, "lesson-blueprint");
-    issues.push(...validateEngineeringContent({ domain: run.domain, script, factPack, diagramLabels }));
-    issues.push(...validateMedicalSources({ domain: run.domain, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })) }));
-    issues.push(...validateClientAssetRights({ domain: run.domain, assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) }));
-    // Independent pedagogy review on a separately routed verifier (Gemini) so the
-    // planning model can never validate its own lesson structure.
+
+  const selectedAssetsContent = selectedAssetsArtifact?.content as { diagramKinds?: Array<{ labels?: string[] }>; diagramModels?: unknown[] } | undefined;
+  const diagramLabels = selectedAssetsContent?.diagramKinds?.flatMap((entry) => entry.labels ?? []) ?? [];
+  const factPack = factArtifact ? FactPackSchema.parse(requireContent(factArtifact, "fact-pack")) : undefined;
+  const blueprint = blueprintArtifact ? requireContent<{ objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> }>(blueprintArtifact, "lesson-blueprint") : undefined;
+  const diagramModels = (selectedAssetsContent?.diagramModels ?? []).flatMap((model) => {
+    const parsed = DiagramModelSchema.safeParse(model);
+    return parsed.success ? [parsed.data] : [];
+  });
+
+  // Narration and preview are re-probed from their stored bytes so the audio and
+  // render-integrity findings cannot be satisfied by the pre-render request.
+  const narration = assets.find((asset) => asset.role === "narration");
+  if (!narration) throw new Error("QA requires the persisted narration asset");
+  const narrationDurationMs = await probePrivateMedia({ objectKey: narration.objectKey, fileName: "narration.mp3", probe: probeAudioDurationMs });
+  const previewProvenance = previewArtifact ? requireContent<{ objectKey?: string }>(previewArtifact, "preview-render") : undefined;
+  const previewProbe = previewProvenance?.objectKey
+    ? await probePrivateMedia({ objectKey: previewProvenance.objectKey, fileName: "preview.mp4", probe: probeMedia })
+    : ZERO_MEDIA_PROBE;
+
+  const canvas = manifest.canvas;
+  const area = sceneDiagramArea(canvas);
+  const palette: DiagramPalette = { canvasTexture: bible.canvasTexture, palette: bible.palette, typography: { heading: bible.typography.heading, body: bible.typography.body } };
+  const lockedTexts = [script.narration.map((line) => `${line.text} ${line.visualAction}`).join("\n"), ...(factPack && blueprint ? [factPack.claims.map((claim) => claim.text).join("\n"), blueprint.scenes.map((scene) => `${scene.purpose} ${scene.visualBeat}`).join("\n")] : [])];
+  const allowedClaimIds = new Set((factPack?.claims ?? []).map((claim) => claim.id));
+  const expectedDurationMs = manifest.words.at(-1)?.endMs ?? 0;
+
+  // The separately routed Gemini review is started first so its network
+  // round-trip overlaps the deterministic structural, visual, and audio branches
+  // instead of adding its full latency after them.
+  const pedagogyBranch: Promise<QaBranchResult> = (async () => {
+    if (!run || !factPack || !blueprint) return { branch: "pedagogy", issues: [], checks: ["pedagogy-review"] };
     const reviewStartedAt = Date.now();
     const reviewContext = { objective: blueprint.objective, scenes: blueprint.scenes, narration: script.narration, claims: factPack.claims };
     const reviewResult = await verifyClaims(`Independently review this lesson's pedagogy against its stated objective and verified claims. Return schemaVersion "pedagogy-review/v1", booleans objectiveCovered, oneIdeaPerBeat, readingLevelAppropriate, and issues [{severity,evidence,remediation}]. Use severity "critical" only for a genuine pedagogy defect. Do not rewrite the script or add facts.\n${JSON.stringify(reviewContext)}`);
     await recordUsage(runId, "qa", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", reviewStartedAt, reviewResult.usage, "pedagogy-review/v1", contextManifest("pedagogy-review-context/v1", [{ role: "script-and-fact-pack", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length }]));
-    issues.push(...pedagogyReviewIssues(PedagogyReviewSchema.parse(reviewResult.value)));
+    return pedagogyQa(PedagogyReviewSchema.parse(reviewResult.value));
+  })();
+
+  const branchResults: QaBranchResult[] = [
+    structuralQa({
+      captions, previewPresent: Boolean(previewArtifact), missingArtifacts,
+      sceneCount: manifest.scenes.length, scriptSceneCount,
+      assetIds: assets.map((asset) => asset.id),
+      sceneAssetIds: manifest.scenes.map((scene) => scene.layers.find((layer) => layer.assetId)?.assetId),
+      ...(run && factPack && blueprint ? { domainPolicy: { domain: run.domain, script, factPack, blueprint, diagramLabels, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })), assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) } } : {}),
+    }),
+    visualQa({ canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words, lockedTexts, allowedClaimIds, diagramModels, palette, area }),
+    audioRenderQa({ words: manifest.words, narrationDurationMs, preview: previewProbe, expected: { durationMs: expectedDurationMs, width: canvas.width, height: canvas.height, fps: manifest.fps, frames: Math.ceil((expectedDurationMs / 1000) * manifest.fps), codec: "h264" } }),
+    await pedagogyBranch,
+  ];
+
+  // All four branches must report before approval may be scheduled, and any
+  // critical finding fails the run through the existing visible-failure path.
+  const convergence = convergeQaBranches(branchResults);
+  if (!convergence.complete) throw new Error("Release QA branches did not converge: " + convergence.missing.join(", "));
+  if (convergence.issues.length) {
+    await getDb().insert(qaFindings).values(convergence.issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
+    throw new Error("Release QA failed: " + convergence.issues.map((issue) => issue.rule).join(", "));
   }
-  if (issues.length) {
-    await getDb().insert(qaFindings).values(issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
-    throw new Error("Release QA failed: " + issues.map((issue) => issue.rule).join(", "));
-  }
-  return saveArtifact({ runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]), content: { passed: true, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "caption-layout", "scene-asset-completeness", "preview-render-present", "domain-policy", "pedagogy-review"] } });
+  return saveArtifact({
+    runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]),
+    content: { passed: true, branches: branchResults.map((result) => ({ branch: result.branch, checks: result.checks, findings: result.issues.length })), checks: convergence.checks },
+  });
 };
 
 const runReleaseRecord = async (runId: string) => {

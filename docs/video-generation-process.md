@@ -34,17 +34,51 @@ Run status is explicit: `queued`, `running`, `awaiting_approval`, `failed`, or `
 
 ## Dependency map
 
-```text
-Frozen input snapshot + reserved run identity
-  -> Intake Briefing Agent (optional chat front door, no tools, user-provided source only)
-  -> frozen video input snapshot + capability/risk route -> source-backed fact pack -> lesson blueprint -> approved script
-                                                                         -> visual bible
-Approved script + visual bible
-  -> [parallel: SVG diagram assets | illustration assets | music/SFX plan]
-  -> full-script voiceover -> word timings
-  -> timeline assembly -> Remotion composition -> preview render
-  -> [parallel: factual/pedagogy | visual/caption | audio | render-integrity verification]
-  -> approval -> final render/export -> immutable release record
+```mermaid
+flowchart TD
+    A["Frozen input snapshot + reserved run identity"]
+    B["Intake Briefing Agent<br/>(optional chat front door, no tools,<br/>user-provided source only)"]
+    C["Frozen video input snapshot<br/>+ capability/risk route"]
+    D["Source-backed fact pack"]
+    E["Lesson blueprint"]
+    F["Approved script"]
+    G["Visual bible"]
+    H1["SVG diagram assets"]
+    H2["Illustration assets"]
+    H3["Music/SFX plan"]
+    I["Full-script voiceover"]
+    J["Word timings"]
+    K["Timeline assembly"]
+    L["Remotion composition"]
+    M["Preview render"]
+    N1["Factual/pedagogy verification"]
+    N2["Visual/caption verification"]
+    N3["Audio verification"]
+    N4["Render-integrity verification"]
+    O["Approval"]
+    P["Final render/export"]
+    Q["Immutable release record"]
+
+    A --> B --> C
+    C --> D --> E --> F --> G
+    G --> H1
+    G --> H2
+    G --> H3
+    G --> I --> J
+    H1 --> K
+    H2 --> K
+    H3 --> K
+    J --> K
+    K --> L --> M
+    M --> N1
+    M --> N2
+    M --> N3
+    M --> N4
+    N1 --> O
+    N2 --> O
+    N3 --> O
+    N4 --> O
+    O --> P --> Q
 ```
 
 Parallel work begins only after its inputs are locked. A scene may not generate images before the visual bible is approved, and Remotion may not finalize timing before the voice track is available. A failed downstream artifact may be regenerated without reopening a locked upstream artifact only when its input contract remains valid.

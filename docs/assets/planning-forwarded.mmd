@@ -1,0 +1,16 @@
+flowchart TD
+  FP[Verified fact pack] --> BP[Lesson blueprint]
+  BP --> SC[Approved script]
+  SC --> VB[Visual bible]
+  SC --> VO[One voiceover]
+  SC --> SL[Spatial layout]
+  SC --> AS[Per-scene deterministic SVG assets]
+  VB --> AS
+  VB --> SL
+  AS --> VM[video-manifest/v1]
+  VO --> CP[Aligned captions]
+  CP --> VM
+  SL --> VM
+  BP --> VM
+  VB --> VM
+  VM --> RR[Remotion preview, QA, approval, final render]

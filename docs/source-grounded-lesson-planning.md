@@ -6,21 +6,11 @@ It does not create an MP4 by itself. Its job is to turn a frozen lesson brief an
 
 ## The whole handoff at a glance
 
-```mermaid
-flowchart LR
-  U[User types: photosynthesis working<br/>+ one authoritative source] --> I[Intake Briefing Agent<br/>GPT-5.6 Luna, no tools]
-  I --> B[Validated intake brief<br/>topic, level, risk, duration,<br/>language, visual profile]
-  B --> R[Frozen video run<br/>source document + snapshot]
-  R --> S[Source-grounded planning<br/>GPT-5.6 Terra]
-  S --> V[Independent verification<br/>Gemini 3.8 Flash]
-  V --> P[Locked planning artifacts]
-  P --> D[Deterministic SVG assets]
-  P --> A[Voiceover + aligned captions]
-  P --> L[Spatial layout + video manifest]
-  D --> M[Remotion preview → QA → final MP4]
-  A --> M
-  L --> M
-```
+<!-- Rendered from assets/lesson-planning-handoff.mmd so PDF/print exporters
+     that do not execute Mermaid still show the diagram. Regenerate with:
+     mmdc -i assets/lesson-planning-handoff.mmd -o assets/lesson-planning-handoff.png -b white -s 3 -->
+
+![End-to-end flow from chat request through validated brief, source-grounded planning, independent verification, and lockstep asset/voice/layout production to preview, QA, and the final MP4.](assets/lesson-planning-handoff.png)
 
 The two text-model responsibilities are intentionally separate:
 
@@ -225,24 +215,11 @@ The visual bible locks the visual language before anything is rendered:
 
 ## What is forwarded after planning
 
-```mermaid
-flowchart TD
-  FP[Verified fact pack] --> BP[Lesson blueprint]
-  BP --> SC[Approved script]
-  SC --> VB[Visual bible]
-  SC --> VO[One voiceover]
-  SC --> SL[Spatial layout]
-  SC --> AS[Per-scene deterministic SVG assets]
-  VB --> AS
-  VB --> SL
-  AS --> VM[video-manifest/v1]
-  VO --> CP[Aligned captions]
-  CP --> VM
-  SL --> VM
-  BP --> VM
-  VB --> VM
-  VM --> RR[Remotion preview, QA, approval, final render]
-```
+<!-- Rendered from assets/planning-forwarded.mmd so PDF/print exporters
+     that do not execute Mermaid still show the diagram. Regenerate with:
+     mmdc -i assets/planning-forwarded.mmd -o assets/planning-forwarded.png -b white -s 3 -->
+
+![Planning artifacts and how they flow into the voiceover, captions, spatial layout, video manifest, and final render/QA handoff.](assets/planning-forwarded.png)
 
 | Downstream receiver | Planning inputs it consumes | New output it creates |
 | --- | --- | --- |

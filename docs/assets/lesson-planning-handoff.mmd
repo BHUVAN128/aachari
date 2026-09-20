@@ -1,0 +1,13 @@
+flowchart LR
+  U[User types: photosynthesis working<br/>+ one authoritative source] --> I[Intake Briefing Agent<br/>GPT-5.6 Luna, no tools]
+  I --> B[Validated intake brief<br/>topic, level, risk, duration,<br/>language, visual profile]
+  B --> R[Frozen video run<br/>source document + snapshot]
+  R --> S[Source-grounded planning<br/>GPT-5.6 Terra]
+  S --> V[Independent verification<br/>Gemini 3.8 Flash]
+  V --> P[Locked planning artifacts]
+  P --> D[Deterministic SVG assets]
+  P --> A[Voiceover + aligned captions]
+  P --> L[Spatial layout + video manifest]
+  D --> M["Remotion preview → QA → final MP4"]
+  A --> M
+  L --> M
