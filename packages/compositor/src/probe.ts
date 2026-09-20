@@ -1,4 +1,7 @@
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { getSilentParts, getVideoMetadata } from "@remotion/renderer";
 
 /**
@@ -17,6 +20,51 @@ export type MediaProbe = {
 };
 
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
+
+/** Loudness and true-peak measured from the produced audio bytes. */
+export type LoudnessProbe = {
+  integratedLufs: number;
+  truePeakDb: number;
+};
+
+/**
+ * Resolves the ffmpeg binary bundled with the pinned Remotion renderer so
+ * loudness measurement uses the exact renderer toolchain rather than relying on
+ * a system install.
+ */
+export const ffmpegPath = (): string => {
+  const packageJson = require.resolve("@remotion/renderer/package.json") as string;
+  const { getExecutablePath } = require(join(dirname(packageJson), "dist/compositor/get-executable-path.js")) as {
+    getExecutablePath: (options: { type: "ffmpeg" | "ffprobe"; indent: boolean; logLevel: string }) => string;
+  };
+  return getExecutablePath({ type: "ffmpeg", indent: false, logLevel: "error" });
+};
+
+const parseLoudnessSummary = (output: string): LoudnessProbe => {
+  const integrated = /"input_i"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/.exec(output);
+  const peak = /"input_tp"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/.exec(output);
+  if (!integrated || !peak) throw new Error("ffmpeg loudnorm did not report integrated loudness and true peak");
+  return { integratedLufs: Number(integrated[1]), truePeakDb: Number(peak[1]) };
+};
+
+/**
+ * Measures EBU R128 integrated loudness (LUFS) and true peak (dBFS) of an audio
+ * file with the renderer's bundled ffmpeg. The bundled build ships `loudnorm`
+ * (not `ebur128`), which reports the same BS.1770 `input_i`/`input_tp` summary.
+ * Release QA requires loudness and clipping to be measured from produced bytes,
+ * never assumed from the request.
+ */
+export const probeLoudness = async (source: string): Promise<LoudnessProbe> => {
+  try {
+    const { stderr } = await execFileAsync(ffmpegPath(), ["-hide_banner", "-nostats", "-i", source, "-af", "loudnorm=print_format=json", "-f", "null", "-"]);
+    return parseLoudnessSummary(stderr);
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr;
+    if (typeof stderr === "string" && stderr.includes("input_i")) return parseLoudnessSummary(stderr);
+    throw error;
+  }
+};
 
 /** The concrete renderer version required to reproduce a render. */
 export const rendererVersion = (): string => {

@@ -178,17 +178,31 @@ describe("Tier A spatial solve verification", () => {
 
 describe("Tier A audio and render check", () => {
   const { words } = buildCue(["Light", "energy", "becomes", "chemical", "energy"], 100);
+  const loudness = { integratedLufs: -16, truePeakDb: -2 };
+  const pronunciation = { narrationText: "Light energy becomes chemical energy", curatedTerms: [] as string[] };
 
   it("accepts aligned narration and a preview that matches the locked manifest", () => {
-    const result = audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, preview: probe, expected });
+    const result = audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, loudness, pronunciation, preview: probe, expected });
     expect(result.issues).toEqual([]);
+    expect(result.checks).toContain("voice-loudness");
   });
 
   it("flags alignment past the measured audio and a render that does not match the manifest", () => {
-    const rules = audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs - 1_000, preview: { ...probe, width: 1080, videoCodec: "vp9" }, expected }).issues.map((issue) => issue.rule);
+    const rules = audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs - 1_000, loudness, pronunciation, preview: { ...probe, width: 1080, videoCodec: "vp9" }, expected }).issues.map((issue) => issue.rule);
     expect(rules).toContain("voice-alignment-exceeds-audio");
     expect(rules).toContain("render-dimensions");
     expect(rules).toContain("render-export-profile");
+  });
+
+  it("flags out-of-range loudness, true-peak clipping, and a dropped curated term", () => {
+    const rules = audioRenderQa({
+      words, narrationDurationMs: words.at(-1)!.endMs + 120, preview: probe, expected,
+      loudness: { integratedLufs: -5, truePeakDb: 0.4 },
+      pronunciation: { narrationText: "Photosynthesis becomes chemical energy", curatedTerms: ["photosynthesis"] },
+    }).issues.map((issue) => issue.rule);
+    expect(rules).toContain("voice-loudness-out-of-range");
+    expect(rules).toContain("voice-true-peak-clipping");
+    expect(rules).toContain("voice-pronunciation-term-missing");
   });
 });
 
@@ -210,7 +224,7 @@ describe("Tier A composition and convergence", () => {
     const tierA = deterministicQa(
       structuralQa({ captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"] }),
       visualQa({ canvas, safeArea, captions: [cue], words, lockedTexts: [], allowedClaimIds: new Set(), diagramModels: [], palette, area }),
-      audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, preview: probe, expected }),
+      audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, loudness: { integratedLufs: -16, truePeakDb: -2 }, pronunciation: { narrationText: "Light energy", curatedTerms: [] }, preview: probe, expected }),
       spatialQa({ canvas, safeArea, layouts: [layout()] }),
     );
     expect(tierA.tier).toBe("A");

@@ -65,10 +65,13 @@ the specified regression evidence are present.
   model review, and `convergeQaTiers` gates approval on both tiers reporting
   with no critical finding. The visual check re-renders the typed diagram models
   persisted on `selected-assets`, and the audio/render check re-probes the stored
-  narration and preview bytes instead of the pre-render request. Remaining:
-  loudness and pronunciation checks, multi-format renders, and preview-still
-  vision in Tier B. Deep per-domain model QA branches are deferred until Tier B
-  findings justify them.
+  narration and preview bytes instead of the pre-render request. Integrated
+  loudness/true-peak is measured from the stored narration with the renderer's
+  bundled ffmpeg `loudnorm` (the bundled build ships `loudnorm`, not `ebur128`),
+  and curated-domain-term pronunciation is checked against the locked word
+  alignment. Remaining: multi-format renders and preview-still vision in Tier B.
+  Deep per-domain model QA branches are deferred until Tier B findings justify
+  them.
 
 ## Remaining implementation order
 
@@ -94,7 +97,8 @@ the specified regression evidence are present.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are
-   implemented; loudness/pronunciation and multi-format renders remain.
+   implemented; loudness/pronunciation gates are implemented; multi-format
+   renders remain.
 6. [x] Add engineering, medical-source-quality, and client rights/style gates.
 7. [~] Wire the spatial solver into layout/composition, then add feedback
    ingestion and the accepted-video cost-baseline workflow. Feedback ingestion

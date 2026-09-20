@@ -52,7 +52,7 @@ import {
   ProviderError,
   type ProviderUsageSnapshot,
 } from "@upcraft/providers";
-import { deriveFrameCount, probeAudioDurationMs, probeMedia, rendererVersion, renderLesson, type MediaProbe } from "@upcraft/compositor";
+import { deriveFrameCount, probeAudioDurationMs, probeLoudness, probeMedia, rendererVersion, renderLesson, type MediaProbe } from "@upcraft/compositor";
 import { appendRunEvent, claimStageLease, checkpointStage, evaluateCostReviewAlert, getRun, setRunStatus, StageLeaseLostError, startStageLeaseHeartbeat } from "./runs.ts";
 import { scheduleStage } from "./outbox.ts";
 import { assertTelemetrySafe } from "./telemetry.ts";
@@ -61,7 +61,7 @@ import { assertClaimVerificationComplete, assertScriptVerificationComplete } fro
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { validateBlueprint } from "./blueprint-qa.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
-import { imageDimensions, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
+import { curatedDomainTerms, imageDimensions, validateIllustrationCandidate, validateLoudness, validatePronunciation, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { validateClientStyleApproval } from "./domain-qa.ts";
 import { audioRenderQa, consolidatedReviewQa, convergeQaTiers, deterministicQa, spatialQa, structuralQa, visualQa, type QaTierResult } from "./qa-branches.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
@@ -426,30 +426,40 @@ const runAssets = async (runId: string) => {
 };
 
 const runVoiceover = async (runId: string) => {
-  const script = ApprovedScriptSchema.parse(requireContent(await getArtifact(runId, "approved-script"), "approved-script"));
-  const inputHash = sha(script);
+  const [scriptArtifact, factArtifact] = await Promise.all([getArtifact(runId, "approved-script"), getArtifact(runId, "fact-pack")]);
+  const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
+  const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
+  const narrationText = canonicalNarrationText(script);
+  const curatedTerms = curatedDomainTerms([...factPack.claims.map((claim) => claim.text), narrationText]);
+  const inputHash = sha([script, curatedTerms]);
   const existing = await getArtifact(runId, "voiceover");
   if (existing?.inputHash === inputHash) return existing;
   const startedAt = Date.now();
-  const narrationResult = await synthesizeNarration(canonicalNarrationText(script));
-  await recordUsage(runId, "voiceover", "elevenlabs", process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", startedAt, narrationResult.usage, "voiceover/v2", contextManifest("canonical-narration/v1", [{ role: "approved-script", hash: inputHash, chars: canonicalNarrationText(script).length, itemCount: script.narration.length }]));
+  const narrationResult = await synthesizeNarration(narrationText);
+  await recordUsage(runId, "voiceover", "elevenlabs", process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", startedAt, narrationResult.usage, "voiceover/v2", contextManifest("canonical-narration/v1", [{ role: "approved-script", hash: sha(script), chars: narrationText.length, itemCount: script.narration.length }]));
   const narration = narrationResult.value;
   const probeDir = await mkdtemp(join(tmpdir(), "upcraft-voice-"));
   let measuredDurationMs: number;
+  let loudness: Awaited<ReturnType<typeof probeLoudness>>;
   try {
     const audioPath = join(probeDir, "narration.mp3");
     await writeFile(audioPath, narration.bytes);
     measuredDurationMs = await probeAudioDurationMs(audioPath);
+    loudness = await probeLoudness(audioPath);
   } finally {
     await rm(probeDir, { recursive: true, force: true });
   }
-  const voiceIssues = validateVoiceAlignment({ words: narration.words, measuredDurationMs });
+  const voiceIssues = [
+    ...validateVoiceAlignment({ words: narration.words, measuredDurationMs }),
+    ...validateLoudness({ probe: loudness }),
+    ...validatePronunciation({ narrationText, words: narration.words, curatedTerms }),
+  ];
   if (voiceIssues.length) await failWithFindings(runId, "Voiceover QA", voiceIssues);
   const object = await putPrivateObject({ key: `runs/${runId}/audio/narration.mp3`, body: narration.bytes, contentType: "audio/mpeg" });
-  const [asset] = await getDb().insert(mediaAssets).values({ runId, role: "narration", objectKey: object.key, sha256: object.sha256, mimeType: "audio/mpeg", byteSize: object.byteSize, selected: true, provenance: { voiceId: process.env.ELEVENLABS_VOICE_ID, model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2" } }).onConflictDoNothing().returning();
+  const [asset] = await getDb().insert(mediaAssets).values({ runId, role: "narration", objectKey: object.key, sha256: object.sha256, mimeType: "audio/mpeg", byteSize: object.byteSize, selected: true, provenance: { voiceId: process.env.ELEVENLABS_VOICE_ID, model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", loudness, curatedTerms } }).onConflictDoNothing().returning();
   const stableAsset = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, "narration"), eq(mediaAssets.sha256, object.sha256))))[0];
   if (!stableAsset) throw new Error("Narration asset persistence failed");
-  return saveArtifact({ runId, stage: "voiceover", role: "voiceover", schemaVersion: "voiceover/v1", inputHash, content: { assetId: stableAsset.id, objectKey: object.key, words: narration.words } });
+  return saveArtifact({ runId, stage: "voiceover", role: "voiceover", schemaVersion: "voiceover/v1", inputHash, content: { assetId: stableAsset.id, objectKey: object.key, words: narration.words, loudness, curatedTerms } });
 };
 
 const runCaptions = async (runId: string) => {
@@ -594,6 +604,8 @@ const runQa = async (runId: string) => {
   const narration = assets.find((asset) => asset.role === "narration");
   if (!narration) throw new Error("QA requires the persisted narration asset");
   const narrationDurationMs = await probePrivateMedia({ objectKey: narration.objectKey, fileName: "narration.mp3", probe: probeAudioDurationMs });
+  const narrationLoudness = await probePrivateMedia({ objectKey: narration.objectKey, fileName: "narration.mp3", probe: probeLoudness });
+  const curatedTerms = curatedDomainTerms([...(factPack?.claims.map((claim) => claim.text) ?? []), canonicalNarrationText(script)]);
   const previewProvenance = previewArtifact ? requireContent<{ objectKey?: string }>(previewArtifact, "preview-render") : undefined;
   const previewProbe = previewProvenance?.objectKey
     ? await probePrivateMedia({ objectKey: previewProvenance.objectKey, fileName: "preview.mp4", probe: probeMedia })
@@ -637,7 +649,7 @@ const runQa = async (runId: string) => {
       ...(run && factPack && blueprint ? { domainPolicy: { domain: run.domain, script, factPack, blueprint, diagramLabels, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })), assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) } } : {}),
     }),
     visualQa({ canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words, lockedTexts, allowedClaimIds, diagramModels, palette, area }),
-    audioRenderQa({ words: manifest.words, narrationDurationMs, preview: previewProbe, expected: { durationMs: expectedDurationMs, width: canvas.width, height: canvas.height, fps: manifest.fps, frames: Math.ceil((expectedDurationMs / 1000) * manifest.fps), codec: "h264" } }),
+    audioRenderQa({ words: manifest.words, narrationDurationMs, loudness: narrationLoudness, pronunciation: { narrationText: canonicalNarrationText(script), curatedTerms }, preview: previewProbe, expected: { durationMs: expectedDurationMs, width: canvas.width, height: canvas.height, fps: manifest.fps, frames: Math.ceil((expectedDurationMs / 1000) * manifest.fps), codec: "h264" } }),
     spatialQa({ canvas, safeArea: manifest.safeArea, layouts }),
   );
   const tierB = await reviewBranch;

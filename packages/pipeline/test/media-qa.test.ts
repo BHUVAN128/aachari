@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CaptionCue, WordTiming } from "@upcraft/contracts";
 import type { MediaProbe } from "@upcraft/compositor";
-import { compositeCaptionFill, imageDimensions, MIN_CAPTION_CONTRAST, validateCaptionLayout, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "../src/media-qa.ts";
+import { compositeCaptionFill, curatedDomainTerms, imageDimensions, MAX_TRUE_PEAK_DB, MIN_CAPTION_CONTRAST, TARGET_INTEGRATED_LUFS, validateCaptionLayout, validateIllustrationCandidate, validateLoudness, validatePronunciation, validateRenderIntegrity, validateVoiceAlignment } from "../src/media-qa.ts";
 
 const buildCue = (words: string[], startMs = 0): { cue: CaptionCue; words: WordTiming[] } => {
   const timings = words.map((text, index) => ({ text, startMs: startMs + index * 300, endMs: startMs + index * 300 + 250 }));
@@ -66,6 +66,38 @@ describe("voiceover alignment QA", () => {
 
   it("rejects a voiceover with no measured duration", () => {
     expect(validateVoiceAlignment({ words, measuredDurationMs: 0 }).map((issue) => issue.rule)).toContain("voice-duration-unmeasured");
+  });
+});
+
+describe("loudness QA", () => {
+  it("accepts narration at the target loudness with a safe true peak", () => {
+    expect(validateLoudness({ probe: { integratedLufs: TARGET_INTEGRATED_LUFS, truePeakDb: -2 } })).toEqual([]);
+  });
+
+  it("rejects unmeasured, out-of-range, and clipping narration", () => {
+    expect(validateLoudness({}).map((issue) => issue.rule)).toContain("voice-loudness-unmeasured");
+    expect(validateLoudness({ probe: { integratedLufs: 2, truePeakDb: 0.5 } }).map((issue) => issue.rule)).toEqual(expect.arrayContaining(["voice-loudness-out-of-range", "voice-true-peak-clipping"]));
+    expect(MAX_TRUE_PEAK_DB).toBe(-1);
+  });
+});
+
+describe("curated-domain-term pronunciation QA", () => {
+  it("derives the curated list only from locked text and keeps technical terms", () => {
+    const terms = curatedDomainTerms(["Photosynthesis converts light energy into chemical energy", "NASA and ATP"]);
+    expect(terms).toContain("photosynthesis");
+    expect(terms).toContain("nasa");
+    expect(terms).toContain("atp");
+  });
+
+  it("accepts a curated term that survives into the word alignment", () => {
+    const { words } = buildCue(["Photosynthesis", "becomes", "chemical", "energy"]);
+    expect(validatePronunciation({ narrationText: "Photosynthesis becomes chemical energy", words, curatedTerms: ["photosynthesis"] })).toEqual([]);
+  });
+
+  it("rejects a curated term the narration contains but the alignment dropped", () => {
+    const { words } = buildCue(["It", "becomes", "chemical", "energy"]);
+    const issues = validatePronunciation({ narrationText: "Photosynthesis becomes chemical energy", words, curatedTerms: ["photosynthesis"] });
+    expect(issues.map((issue) => issue.rule)).toContain("voice-pronunciation-term-missing");
   });
 });
 

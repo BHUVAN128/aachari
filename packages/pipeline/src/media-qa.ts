@@ -1,4 +1,4 @@
-import { contrastRatio, estimatedTextWidth, type MediaProbe } from "@upcraft/compositor";
+import { contrastRatio, estimatedTextWidth, type LoudnessProbe, type MediaProbe } from "@upcraft/compositor";
 import type { CaptionCue, WordTiming } from "@upcraft/contracts";
 
 /**
@@ -113,6 +113,86 @@ export const validateVoiceAlignment = (params: { words: WordTiming[]; measuredDu
     issues.push({ rule: "voice-alignment-exceeds-audio", evidence: { measuredDurationMs, lastEndMs, trailing, tolerance }, remediation: "Regenerate the voiceover; alignment cannot extend past the audio." });
   } else if (trailing > tolerance) {
     issues.push({ rule: "voice-audio-trailing-gap", evidence: { measuredDurationMs, lastEndMs, trailing, tolerance }, remediation: "Regenerate the voiceover or verify the alignment covers the whole narration." });
+  }
+  return issues;
+};
+
+/**
+ * EBU R128 loudness gate. Online narration targets -16 LUFS with a bounded
+ * tolerance, and the true peak must stay clear of 0 dBFS so the mix cannot clip
+ * on any playback system. Measured with the renderer's ffmpeg, never assumed.
+ */
+export const TARGET_INTEGRATED_LUFS = -16;
+export const LOUDNESS_TOLERANCE_LUFS = 4;
+export const MAX_TRUE_PEAK_DB = -1;
+
+export const validateLoudness = (params: {
+  probe?: LoudnessProbe;
+  targetLufs?: number;
+  toleranceLufs?: number;
+  maxTruePeakDb?: number;
+}): MediaIssue[] => {
+  const issues: MediaIssue[] = [];
+  const { probe } = params;
+  if (!probe || !Number.isFinite(probe.integratedLufs) || !Number.isFinite(probe.truePeakDb)) {
+    return [{ rule: "voice-loudness-unmeasured", evidence: { probe: probe ?? null }, remediation: "Measure the narration's integrated loudness and true peak from the produced audio bytes." }];
+  }
+  const target = params.targetLufs ?? TARGET_INTEGRATED_LUFS;
+  const tolerance = params.toleranceLufs ?? LOUDNESS_TOLERANCE_LUFS;
+  if (Math.abs(probe.integratedLufs - target) > tolerance) {
+    issues.push({ rule: "voice-loudness-out-of-range", evidence: { integratedLufs: probe.integratedLufs, target, tolerance }, remediation: "Normalize the narration to the target integrated loudness before release." });
+  }
+  const maxPeak = params.maxTruePeakDb ?? MAX_TRUE_PEAK_DB;
+  if (probe.truePeakDb > maxPeak) {
+    issues.push({ rule: "voice-true-peak-clipping", evidence: { truePeakDb: probe.truePeakDb, maxTruePeakDb: maxPeak }, remediation: "Lower the narration gain so the true peak stays below the clipping ceiling." });
+  }
+  return issues;
+};
+
+const normalizeTerm = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const normalizePhrase = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const ACRONYM_PATTERN = /\b[A-Z]{2,6}\b/g;
+
+/**
+ * Derives the curated domain-term list only from locked claim and narration
+ * text. Long technical tokens and all-caps acronyms are the terms whose
+ * pronunciation a TTS voice most often mangles, so they must be accepted by the
+ * alignment before the voiceover can advance.
+ */
+export const curatedDomainTerms = (texts: string[], options: { minLength?: number; limit?: number } = {}): string[] => {
+  const minLength = options.minLength ?? 8;
+  const limit = options.limit ?? 40;
+  const terms = new Set<string>();
+  for (const text of texts) {
+    for (const token of text.split(/\s+/)) {
+      const cleaned = token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+      const normalized = normalizeTerm(cleaned);
+      if (normalized.length >= minLength && /[\p{L}]/u.test(normalized)) terms.add(normalized);
+    }
+    for (const acronym of text.match(ACRONYM_PATTERN) ?? []) terms.add(normalizeTerm(acronym));
+  }
+  return [...terms].sort((a, b) => b.length - a.length || a.localeCompare(b)).slice(0, limit);
+};
+
+/**
+ * Deterministic pronunciation gate: any curated domain term that appears in the
+ * locked narration text must appear in the word alignment returned by TTS. A
+ * term that the narration contains but the alignment does not means the voice
+ * dropped, merged, or mis-rendered it, so the voiceover must be regenerated.
+ */
+export const validatePronunciation = (params: {
+  narrationText: string;
+  words: WordTiming[];
+  curatedTerms: string[];
+}): MediaIssue[] => {
+  const issues: MediaIssue[] = [];
+  const narration = normalizePhrase(params.narrationText).replace(/ /g, "");
+  const spoken = normalizePhrase(params.words.map((word) => word.text).join(" ")).replace(/ /g, "");
+  for (const term of params.curatedTerms) {
+    if (!term || !narration.includes(term)) continue;
+    if (!spoken.includes(term)) {
+      issues.push({ rule: "voice-pronunciation-term-missing", evidence: { term }, remediation: "Add a pronunciation note for the domain term or regenerate the voiceover so the alignment accepts it." });
+    }
   }
   return issues;
 };

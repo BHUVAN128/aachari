@@ -4,7 +4,7 @@ import {
   validateDiagramModel,
   type DiagramPalette,
 } from "./diagram-qa.ts";
-import { validateCaptionLayout, validateRenderIntegrity, validateVoiceAlignment, type MediaIssue } from "./media-qa.ts";
+import { validateCaptionLayout, validateLoudness, validatePronunciation, validateRenderIntegrity, validateVoiceAlignment, type MediaIssue } from "./media-qa.ts";
 import {
   consolidatedReviewIssues,
   validateClientAssetRights,
@@ -21,7 +21,7 @@ import type {
   ResolvedLayout,
   WordTiming,
 } from "@upcraft/contracts";
-import type { DiagramArea, DiagramCanvas, MediaProbe } from "@upcraft/compositor";
+import type { DiagramArea, DiagramCanvas, LoudnessProbe, MediaProbe } from "@upcraft/compositor";
 
 /**
  * Tiered release QA from section 11 of `docs/video-generation-process.md`.
@@ -132,16 +132,24 @@ export const visualQa = (input: VisualQaInput): QaCheckResult => {
 export type AudioRenderQaInput = {
   words: WordTiming[];
   narrationDurationMs: number;
+  /** Integrated loudness/true peak re-measured from the stored narration bytes. */
+  loudness: LoudnessProbe;
+  pronunciation: { narrationText: string; curatedTerms: string[] };
   expected: { durationMs: number; width: number; height: number; fps: number; frames: number; codec: string };
   /** The preview file re-probed from its stored bytes, never the request. */
   preview: MediaProbe;
 };
 
-/** Audio duration/alignment plus render-integrity measured from the produced file. */
+/**
+ * Audio duration/alignment, measured loudness/clipping, curated-domain-term
+ * pronunciation, and render integrity measured from the produced file.
+ */
 export const audioRenderQa = (input: AudioRenderQaInput): QaCheckResult => ({
-  checks: ["voice-alignment", "render-integrity"],
+  checks: ["voice-alignment", "voice-loudness", "voice-pronunciation", "render-integrity"],
   issues: [
     ...validateVoiceAlignment({ words: input.words, measuredDurationMs: input.narrationDurationMs }),
+    ...validateLoudness({ probe: input.loudness }),
+    ...validatePronunciation({ narrationText: input.pronunciation.narrationText, words: input.words, curatedTerms: input.pronunciation.curatedTerms }),
     ...validateRenderIntegrity({
       probe: input.preview,
       expectedDurationMs: input.expected.durationMs,
