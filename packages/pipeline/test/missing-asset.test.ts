@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missingRenderAssets } from "../src/stages.ts";
+import { missingRenderAssets } from "../src/artifacts/store.ts";
 
 describe("missing required render assets", () => {
   it("names exactly the manifest layers whose selected asset is not available", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
-import { MAX_ARTIFACT_ATTEMPTS, decideInvalidArtifactRetry, isArtifactValidationFailure } from "../src/stages.ts";
+import { MAX_ARTIFACT_ATTEMPTS, decideInvalidArtifactRetry, isArtifactValidationFailure } from "../src/pipeline/retry-policy.ts";
 import { TelemetryLeakageError, assertTelemetrySafe } from "../src/telemetry.ts";
 import { contextManifest } from "../src/context.ts";
 

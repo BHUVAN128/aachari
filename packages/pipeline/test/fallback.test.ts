@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProviderError, resolveModelRoute } from "@upcraft/providers";
-import { resolveStageRoute, withFallback } from "../src/stages.ts";
+import { resolveStageRoute } from "../src/routing.ts";
+import { withFallback } from "../src/fallback.ts";
 
 const transient = (code = "GEMINI_503") => new ProviderError("temporary provider failure", { code, retryable: true, status: 503 });
 const permanent = (code = "GEMINI_401") => new ProviderError("authentication failed", { code, retryable: false, status: 401 });

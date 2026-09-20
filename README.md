@@ -15,8 +15,20 @@ Model routing lives in [`packages/providers/src/model-config.ts`](packages/provi
 
 A submission first creates a frozen input snapshot and database outbox record. If credentials are missing, preflight records a visible terminal failure. Set valid `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` before expecting an actual voice/render pipeline to proceed. Medical runs additionally require Clerk credentials and a clinician seeded with `npm run db:seed-clinician`.
 
+## Pipeline architecture
+
+The generation process is grouped by governing stage under [`packages/pipeline/src/pipeline/`](packages/pipeline/src/pipeline/):
+
+- `pipeline/stages/` — one module per `video-generation-process.md` stage (`s01-preflight` … `s16-release-record`). Asset production (§7 M6) is split into `s07-assets/{diagrams,illustrations,sound-plan}.ts` so the deferred sound plan and optional illustration logic stay isolated from the required deterministic diagrams.
+- `pipeline/registry.ts` — the dependency graph: `stageHandlers` and `stageInputRoles`, read by `getStageInputHash`. The `pipeline-registry` test asserts every stage has a handler and that the governing order cannot be weakened.
+- `pipeline/executor.ts` — cross-stage lease claim/heartbeat/checkpoint and retry classification (`processPipelineStage`).
+- `pipeline/context.ts` — the explicit `StageContext` service surface every handler receives.
+- `prompts/` — provider structured-output JSON schemas; `artifacts/` — the single durable artifact store and hashing; `usage.ts` — provider accounting; `render/` — preview/final master and resolution variants.
+
+The public entry is `@upcraft/pipeline/pipeline` (`processPipelineStage`). [`src/stages.ts`](packages/pipeline/src/stages.ts) is a deprecated compatibility shim that re-exports the new modules.
+
 ## Spatial overlays
 
-The pipeline does not accept final overlay coordinates from an LLM. Deterministic SVG diagrams emit measured anchors, which the assets stage persists. A deterministic solver in [`packages/pipeline/src/spatial.ts`](packages/pipeline/src/spatial.ts) (covered by [`packages/pipeline/test/spatial.test.ts`](packages/pipeline/test/spatial.test.ts)) solves an affine placement from subject/target anchors, verifies the resolved attachment, and rejects behind-mask relations with no clip path. Wiring the solver into `runSpatialLayout` and the composition is tracked in [the implementation roadmap](docs/implementation-roadmap.md).
+The pipeline does not accept final overlay coordinates from an LLM. Deterministic SVG diagrams emit measured anchors, which the assets stage persists. A deterministic solver in [`packages/pipeline/src/spatial.ts`](packages/pipeline/src/spatial.ts) (covered by [`packages/pipeline/test/spatial.test.ts`](packages/pipeline/test/spatial.test.ts)) solves an affine placement from subject/target anchors, verifies the resolved attachment, and rejects behind-mask relations with no clip path. It is invoked by [`packages/pipeline/src/pipeline/stages/s10-spatial-layout.ts`](packages/pipeline/src/pipeline/stages/s10-spatial-layout.ts).
 
 Read [the generation process](docs/video-generation-process.md), [quality gates](docs/benchmarkstofocus.md), and [model routing](docs/model-recommendations.md) before changing the pipeline.

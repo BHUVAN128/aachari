@@ -3,7 +3,7 @@ import { Worker } from "bullmq";
 import { closeDb } from "@upcraft/db";
 import { appendRunEvent, closeQueue, getQueueConnection, PIPELINE_QUEUE, recoverReservedRuns, setRunStatus, type PipelineJob } from "@upcraft/pipeline";
 import { processIntakeSession } from "@upcraft/pipeline/intake";
-import { processPipelineStage } from "@upcraft/pipeline/stages";
+import { processPipelineStage } from "@upcraft/pipeline/pipeline";
 
 config({ path: "../../.env.local" });
 config({ path: "../../.env" });

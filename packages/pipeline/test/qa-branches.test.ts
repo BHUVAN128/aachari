@@ -13,7 +13,7 @@ import {
   visualQa,
   type QaTierResult,
 } from "../src/qa-branches.ts";
-import { sceneDiagramArea } from "../src/stages.ts";
+import { sceneDiagramArea } from "../src/pipeline/scene-area.ts";
 
 const sourceId = "11111111-1111-4111-8111-111111111111";
 const sceneId = "22222222-2222-4222-8222-222222222222";

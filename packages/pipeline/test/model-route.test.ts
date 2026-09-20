@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MODEL_CONFIG_VERSION, STAGE_ORDER, StageNameSchema } from "@upcraft/contracts";
 import { MODEL_ROUTES, STAGE_CAPABILITIES } from "@upcraft/providers";
-import { resolveStageRoute } from "../src/stages.ts";
+import { resolveStageRoute } from "../src/routing.ts";
 
 describe("stage model routing", () => {
   it("is exhaustive over every governed stage name", () => {
