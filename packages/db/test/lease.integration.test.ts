@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { artifacts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns } from "../src/index.ts";
+import { artifacts, artifactAttempts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns } from "../src/index.ts";
 import { checkpointStage, claimStageLease, heartbeatStageLease, STAGE_LEASE_MS, StageLeaseLostError } from "../../pipeline/src/runs.ts";
-import { getStageInputHash } from "../../pipeline/src/stages.ts";
+import { decideInvalidArtifactRetry, getStageInputHash, recordInvalidArtifactAttempt, validationFeedback } from "../../pipeline/src/stages.ts";
 import { closeQueue } from "../../pipeline/src/queue.ts";
 import { recoverReservedRuns } from "../../pipeline/src/outbox.ts";
 
@@ -151,6 +151,62 @@ describe("stage lease persistence", () => {
     const dispatches = await db.select().from(outbox).where(eq(outbox.key, `${crashRunId}--research--recovery-2`));
     expect(dispatches.length).toBe(1);
     await db.delete(videoRuns).where(eq(videoRuns.id, crashRunId));
+  });
+
+  it("persists invalid-artifact attempts and feeds the validation error into the bounded regeneration", async () => {
+    const db = getDb();
+    const retryRunId = randomUUID();
+    const inputHash = "a".repeat(64);
+    await db.insert(videoRuns).values({
+      id: retryRunId, status: "running", domain: "standard", currentStage: "blueprint",
+      title: "Invalid artifact regeneration fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Invalid artifact regeneration fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "b".repeat(64),
+    });
+
+    const firstDecision = decideInvalidArtifactRetry({ attemptCount: 1, error: new SyntaxError("malformed JSON") });
+    expect(firstDecision).toMatchObject({ regenerate: true, nextAttempt: 2 });
+    await recordInvalidArtifactAttempt({ runId: retryRunId, stage: "blueprint", inputHash, error: new SyntaxError("malformed JSON"), attempt: 1 });
+    await recordInvalidArtifactAttempt({ runId: retryRunId, stage: "blueprint", inputHash, error: new SyntaxError("malformed JSON again"), attempt: 2 });
+
+    const rows = await db.select().from(artifacts).where(eq(artifacts.runId, retryRunId));
+    expect(rows.length).toBe(2);
+    expect(rows.every((row) => row.status === "invalid" && row.role === "blueprint-attempt")).toBe(true);
+    expect(rows.map((row) => row.version).sort()).toEqual([1, 2]);
+    const attempts = await db.select().from(artifactAttempts).where(eq(artifactAttempts.artifactId, rows[0]!.id));
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]!.outcome).toBe("invalid");
+    expect(attempts[0]!.errorCode).toBe("ARTIFACT_VALIDATION");
+
+    const feedback = await validationFeedback(retryRunId, "blueprint");
+    expect(feedback).toContain("bounded artifact attempts failed validation");
+    expect(feedback).toContain("malformed JSON");
+    await db.delete(videoRuns).where(eq(videoRuns.id, retryRunId));
+  });
+
+  it("does not regenerate past the attempt budget", async () => {
+    const db = getDb();
+    const budgetRunId = randomUUID();
+    await db.insert(videoRuns).values({
+      id: budgetRunId, status: "running", domain: "standard", currentStage: "blueprint",
+      title: "Attempt budget fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Attempt budget fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "c".repeat(64),
+    });
+    await recordInvalidArtifactAttempt({ runId: budgetRunId, stage: "blueprint", inputHash: "d".repeat(64), error: new SyntaxError("malformed JSON"), attempt: 3 });
+    const rows = await db.select().from(artifacts).where(eq(artifacts.runId, budgetRunId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe("invalid");
+    expect(decideInvalidArtifactRetry({ attemptCount: 3, error: new SyntaxError("malformed JSON") })).toEqual({ regenerate: false, reason: "attempt_budget_exhausted" });
+    await db.delete(videoRuns).where(eq(videoRuns.id, budgetRunId));
   });
 
   it("marks a stage-less running run visibly failed during recovery", async () => {

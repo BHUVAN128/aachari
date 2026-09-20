@@ -141,7 +141,7 @@ const saveArtifact = async (params: { runId: string; stage: StageName; role: str
   return artifact;
 };
 
-const recordInvalidArtifactAttempt = async (params: { runId: string; stage: StageName; inputHash: string; error: unknown; attempt: number }) => {
+export const recordInvalidArtifactAttempt = async (params: { runId: string; stage: StageName; inputHash: string; error: unknown; attempt: number }) => {
   const db = getDb();
   const role = `${params.stage}-attempt`;
   const existing = await db.select({ version: max(artifacts.version) }).from(artifacts).where(and(eq(artifacts.runId, params.runId), eq(artifacts.stage, params.stage), eq(artifacts.role, role)));
@@ -159,7 +159,7 @@ const recordInvalidArtifactAttempt = async (params: { runId: string; stage: Stag
   });
 };
 
-const validationFeedback = async (runId: string, stage: StageName) => {
+export const validationFeedback = async (runId: string, stage: StageName) => {
   const db = getDb();
   const invalids = await db.select({ id: artifacts.id }).from(artifacts).where(and(eq(artifacts.runId, runId), eq(artifacts.stage, stage), eq(artifacts.status, "invalid")));
   if (!invalids.length) return "";

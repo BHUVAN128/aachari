@@ -8,12 +8,12 @@ the specified regression evidence are present.
 
 - [x] Intake durability, frozen run snapshot, source evidence mapping, route
   separation, canonical narration, approval policy, and durable outbox spine.
-- [~] Phase 0 — stage ownership/recovery: leases, expiry recovery, stable
-  media deduplication, real locked-input checkpoint hashes, URL provenance,
-  and bounded invalid-artifact regeneration are implemented. This change adds
-  periodic lease renewal plus database-level fencing, source/artifact-hash,
-  and duplicate-media replay tests. Remaining: crash/resume and
-  invalid-artifact-regeneration integration tests.
+- [x] Phase 0 — stage ownership/recovery: leases, periodic renewal, expiry
+  recovery, stable media deduplication, real locked-input checkpoint hashes, URL
+  provenance, and bounded invalid-artifact regeneration are implemented and
+  covered by DB-backed integration tests (lease fencing, source/artifact-hash
+  equality, duplicate-media replay, crash-mid-stage recovery, and
+  invalid-artifact-regeneration feedback).
 - [~] Phase 1 — test harness: unit tests, a PostgreSQL lease integration test,
   deterministic Intake Brief policy fences (selected language and conservative
   medical routing), source-URL HTTPS/content-type policy, provider
@@ -80,9 +80,10 @@ the specified regression evidence are present.
 
 ## Remaining implementation order
 
-1. [ ] Complete Phase 0/1 evidence: crash-mid-stage recovery, duplicate media
-   replay, invalid-artifact regeneration, checkpoint input-hash equality, and
-   all benchmark routing/intake/provider/telemetry regressions.
+1. [x] Complete Phase 0/1 evidence: crash-mid-stage recovery, duplicate media
+   replay, invalid-artifact regeneration, and checkpoint input-hash equality now
+   have DB-backed regression coverage against PostgreSQL; routing/intake/provider/
+   telemetry regressions are covered by the unit suites.
 2. [x] Build scene-plan and asset-brief production plus deterministic semantic
    SVG/Remotion diagrams and their label/geometry/contrast validation.
 3. [~] Implement optional illustration candidate workflows and a recorded
