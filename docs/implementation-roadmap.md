@@ -22,7 +22,15 @@ the specified regression evidence are present.
   completeness and support reducers (source-verification failure), and
   optional-asset fallback decisions now exist. Deterministic text-layer PDF
   extraction (byte/character limits plus raw-byte hash) has regression coverage.
-  Remaining: missing-required-asset and DB-backed integration scenarios.
+  Missing-required-asset fencing and the DB-backed checkpoint model-route
+  scenario are now covered; see the model-config unification entry below.
+- [x] Model-config unification and gap closure — routing now lives in one typed,
+  versioned registry (`packages/providers/src/model-config.ts`), every adapter
+  takes a resolved `model-config/v1` route instead of reading model env at call
+  time, and the frozen route is persisted on `stage_checkpoints.model_route`
+  (migration `0006`). A declared fallback executes as one bounded, recorded
+  attempt only for classified transient provider failures, so a release record
+  is reproducible after an env change without silently downgrading quality.
 - [x] Stage 3 blueprint contract — `lesson-blueprint/v2` now carries the hook,
   explanation arc, recap, and optional knowledge-check required by §4, and
   `blueprint-qa.ts` deterministically validates objective coverage,

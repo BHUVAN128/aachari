@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, max } from "drizzle-orm";
 import { IntakeSessionInputSchema, type IntakeSessionInput } from "@upcraft/contracts";
 import { getDb, intakeAttempts, intakeSessions } from "@upcraft/db";
-import { assertIntakeCapabilities, generateIntakeBrief, INTAKE_AGENT_ID, INTAKE_MODEL, INTAKE_PROMPT_VERSION } from "@upcraft/providers/intake";
+import { assertIntakeCapabilities, generateIntakeBrief, INTAKE_AGENT_ID, INTAKE_PROMPT_VERSION } from "@upcraft/providers/intake";
+import { resolveModelRoute } from "@upcraft/providers/model-config";
 import type { ProviderUsageSnapshot } from "@upcraft/providers/usage";
 import { createVideoRun } from "./runs.ts";
 import { scheduleIntakeSession } from "./outbox.ts";
@@ -34,8 +35,9 @@ const recordAttempt = async (sessionId: string, attempt: number, params: {
 }) => {
   const db = getDb();
   const errorCode = params.error && typeof params.error === "object" && "code" in params.error ? String((params.error as { code?: unknown }).code) : undefined;
+  const intakeRoute = resolveModelRoute("intake-brief");
   await db.insert(intakeAttempts).values({
-    sessionId, attempt, provider: "openai", model: params.usage?.model ?? INTAKE_MODEL(), requestId: params.usage?.requestId,
+    sessionId, attempt, provider: intakeRoute.provider, model: params.usage?.model ?? intakeRoute.model, requestId: params.usage?.requestId,
     promptVersion: INTAKE_PROMPT_VERSION, outcome: params.outcome, errorCode, errorMessage: params.error ? safeMessage(params.error) : null,
     inputTokens: params.usage?.inputTokens, cachedInputTokens: params.usage?.cachedInputTokens, outputTokens: params.usage?.outputTokens,
     reasoningTokens: params.usage?.reasoningTokens, inputCharacters: params.usage?.inputCharacters, outputCharacters: params.usage?.outputCharacters,

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, max, or, sql } from "drizzle-orm";
-import { CreateRunInputSchema, InputSnapshotSchema, type CreateRunInput, type InputSnapshot, type RunEvent, type RunStatus, type StageName } from "@upcraft/contracts";
+import { CreateRunInputSchema, InputSnapshotSchema, type CreateRunInput, type InputSnapshot, type ModelRoute, type RunEvent, type RunStatus, type StageName } from "@upcraft/contracts";
 import { getDb, outbox, providerUsage, runEvents, sourceDocuments, stageCheckpoints, videoRuns } from "@upcraft/db";
 import { publishRunSignal } from "./queue.ts";
 import { scheduleStage } from "./outbox.ts";
@@ -256,7 +256,7 @@ export const startStageLeaseHeartbeat = (params: {
   };
 };
 
-export const checkpointStage = async (params: { runId: string; stage: StageName; inputHash: string; outcome: "valid" | "failed" | "awaiting_approval"; outputHash?: string; evidence?: Record<string, unknown>; leaseToken?: string; leaseOwner?: string }) => {
+export const checkpointStage = async (params: { runId: string; stage: StageName; inputHash: string; outcome: "valid" | "failed" | "awaiting_approval"; outputHash?: string; evidence?: Record<string, unknown>; modelRoute?: ModelRoute; leaseToken?: string; leaseOwner?: string }) => {
   const db = getDb();
   const now = new Date();
   const where = [eq(stageCheckpoints.runId, params.runId), eq(stageCheckpoints.stage, params.stage)];
@@ -264,6 +264,7 @@ export const checkpointStage = async (params: { runId: string; stage: StageName;
   const updated = await db.update(stageCheckpoints).set({
     inputHash: params.inputHash, outputHash: params.outputHash, outcome: params.outcome,
     evidence: params.evidence ?? {}, leaseToken: null, leaseOwner: params.leaseOwner ?? null,
+    ...(params.modelRoute ? { modelRoute: params.modelRoute } : {}),
     leaseHeartbeatAt: now, leaseExpiresAt: null, updatedAt: now,
   }).where(and(...where)).returning({ id: stageCheckpoints.id });
   if (updated.length) return;
@@ -273,5 +274,6 @@ export const checkpointStage = async (params: { runId: string; stage: StageName;
   await db.insert(stageCheckpoints).values({
     runId: params.runId, stage: params.stage, inputHash: params.inputHash, outputHash: params.outputHash,
     outcome: params.outcome, evidence: params.evidence ?? {}, attemptCount: 1, leaseOwner: params.leaseOwner,
+    ...(params.modelRoute ? { modelRoute: params.modelRoute } : {}),
   }).onConflictDoNothing();
 };

@@ -1,14 +1,14 @@
 import { gateway } from "@ai-sdk/gateway";
 import { Output, ToolLoopAgent, isStepCount } from "ai";
-import { IntakeBriefSchema, type IntakeBrief } from "@upcraft/contracts";
+import { IntakeBriefSchema, type IntakeBrief, type ModelRoute } from "@upcraft/contracts";
 import type { ProviderResult } from "./usage.ts";
 import { assertIntakeCapabilities } from "./capabilities.ts";
+import { resolveModelRoute } from "./model-config.ts";
 
 export { assertIntakeCapabilities };
 
 export const INTAKE_AGENT_ID = "intake-briefing-agent";
 export const INTAKE_PROMPT_VERSION = "intake-briefing/v1";
-export const INTAKE_MODEL = () => process.env.INTAKE_BRIEF_MODEL ?? "openai/gpt-5.6-luna";
 
 // This is deliberately stricter than the model prompt. A structured response
 // that downgrades a health-adjacent request must be held, not allowed to open a
@@ -23,9 +23,14 @@ Use these defaults when the user did not explicitly provide a value: learner lev
 
 Return only the requested structured object. Do not add fields, commentary, or reasoning.`;
 
-const agent = new ToolLoopAgent({
+/**
+ * Builds the toolless intake agent for one resolved route. The agent must be
+ * created per call: binding it once at module import silently ignores an env
+ * route change after import.
+ */
+export const createIntakeAgent = (route: ModelRoute) => new ToolLoopAgent({
   id: INTAKE_AGENT_ID,
-  model: gateway(INTAKE_MODEL()),
+  model: gateway(route.modelRef),
   instructions,
   tools: {},
   output: Output.object({ schema: IntakeBriefSchema }),
@@ -46,16 +51,17 @@ export const enforceIntakeBriefPolicy = (params: { requestText: string; language
   return brief;
 };
 
-export const generateIntakeBrief = async (params: { requestText: string; language: string }): Promise<ProviderResult<IntakeBrief>> => {
+export const generateIntakeBrief = async (params: { requestText: string; language: string }, env: NodeJS.ProcessEnv = process.env): Promise<ProviderResult<IntakeBrief>> => {
+  const route = resolveModelRoute("intake-brief", env);
   const prompt = `Selected language: ${params.language}\nUser lesson request:\n${params.requestText}`;
-  const result = await agent.generate({ prompt });
+  const result = await createIntakeAgent(route).generate({ prompt });
   if (!result.output) throw new Error("Intake Briefing Agent did not return a structured brief");
   const value = enforceIntakeBriefPolicy({ requestText: params.requestText, language: params.language, brief: result.output });
   return {
     value,
     usage: {
       requestId: result.response?.id,
-      model: INTAKE_MODEL(),
+      model: route.model,
       inputTokens: numeric(result.usage?.inputTokens),
       cachedInputTokens: numeric(result.usage?.inputTokenDetails?.cacheReadTokens),
       outputTokens: numeric(result.usage?.outputTokens),

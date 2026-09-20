@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { artifacts, artifactAttempts, closeDb, getDb, mediaAssets, outbox, sourceDocuments, stageCheckpoints, videoRuns, viewerOutcomes } from "../src/index.ts";
 import { checkpointStage, claimStageLease, heartbeatStageLease, STAGE_LEASE_MS, StageLeaseLostError } from "../../pipeline/src/runs.ts";
-import { decideInvalidArtifactRetry, getStageInputHash, recordInvalidArtifactAttempt, validationFeedback } from "../../pipeline/src/stages.ts";
+import { decideInvalidArtifactRetry, getStageInputHash, recordInvalidArtifactAttempt, resolveStageRoute, validationFeedback } from "../../pipeline/src/stages.ts";
 import { collectRegressionFixtures } from "../../pipeline/src/feedback-regression.ts";
 import { closeQueue } from "../../pipeline/src/queue.ts";
 import { recoverReservedRuns } from "../../pipeline/src/outbox.ts";
@@ -208,6 +208,35 @@ describe("stage lease persistence", () => {
     expect(rows[0]!.status).toBe("invalid");
     expect(decideInvalidArtifactRetry({ attemptCount: 3, error: new SyntaxError("malformed JSON") })).toEqual({ regenerate: false, reason: "attempt_budget_exhausted" });
     await db.delete(videoRuns).where(eq(videoRuns.id, budgetRunId));
+  });
+
+  it("persists the resolved model route on the checkpoint and replays it with the locked route", async () => {
+    const db = getDb();
+    const routeRunId = randomUUID();
+    await db.insert(videoRuns).values({
+      id: routeRunId, status: "running", domain: "standard", currentStage: "research",
+      title: "Checkpoint model route fixture",
+      snapshot: {
+        schemaVersion: "input-snapshot/v1", topic: "Checkpoint model route fixture", learningLevel: "Grade 8",
+        audienceCategory: "school", language: "en", durationSeconds: 60, aspectRatio: "16:9",
+        domain: "standard", visualProfile: "test", requestedDestination: "local", sourceIds: [],
+      },
+      snapshotHash: "e".repeat(64),
+    });
+    const route = resolveStageRoute("research")!;
+    const lease = await claimStageLease({ runId: routeRunId, stage: "research", inputHash: "f".repeat(64), owner: "route-worker" });
+    expect(lease).not.toBeNull();
+    await checkpointStage({ runId: routeRunId, stage: "research", inputHash: "f".repeat(64), outputHash: "1".repeat(64), outcome: "valid", leaseToken: lease!.leaseToken, modelRoute: route });
+
+    const persisted = await db.query.stageCheckpoints.findFirst({ where: eq(stageCheckpoints.runId, routeRunId) });
+    expect(persisted?.modelRoute).toMatchObject({ capability: "planning", provider: "openai", configVersion: "model-config/v1" });
+
+    // A later env change must not rewrite the frozen route already recorded.
+    process.env.OPENAI_PLANNING_MODEL = "gpt-5.6-sol";
+    const stillFrozen = await db.query.stageCheckpoints.findFirst({ where: eq(stageCheckpoints.runId, routeRunId) });
+    expect(stillFrozen?.modelRoute?.model).toBe(route.model);
+    delete process.env.OPENAI_PLANNING_MODEL;
+    await db.delete(videoRuns).where(eq(videoRuns.id, routeRunId));
   });
 
   it("turns persisted weak viewer outcomes into regression fixtures", async () => {

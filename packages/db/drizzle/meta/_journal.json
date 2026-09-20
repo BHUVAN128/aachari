@@ -43,6 +43,13 @@
       "when": 1789834357920,
       "tag": "0005_magical_wither",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789906655171,
+      "tag": "0006_bizarre_landau",
+      "breakpoints": true
     }
   ]
 }

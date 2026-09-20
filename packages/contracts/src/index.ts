@@ -52,6 +52,45 @@ export const ArtifactStatusSchema = z.enum([
 ]);
 export type ArtifactStatus = z.infer<typeof ArtifactStatusSchema>;
 
+/** Version stamped on every resolved model route so release records stay reproducible. */
+export const MODEL_CONFIG_VERSION = "model-config/v1";
+
+/**
+ * Transport-level provider identity. `ai-gateway` fronts a concrete upstream
+ * model whose identifier carries its own `provider/model` reference.
+ */
+export const ProviderIdSchema = z.enum(["openai", "gemini", "elevenlabs", "ai-gateway", "deterministic"]);
+export type ProviderId = z.infer<typeof ProviderIdSchema>;
+
+/** A model-routed job named to mirror the model-recommendations job table. */
+export const ModelCapabilitySchema = z.enum([
+  "intake-brief",
+  "planning",
+  "fact-verification",
+  "script-verification",
+  "qa-review",
+  "illustration",
+  "narration",
+]);
+export type ModelCapability = z.infer<typeof ModelCapabilitySchema>;
+
+/**
+ * The frozen route resolved before a stage starts. It is persisted on the stage
+ * checkpoint so a release record stays reproducible even after a provider
+ * default or environment override changes.
+ */
+export const ModelRouteSchema = z.object({
+  capability: ModelCapabilitySchema,
+  provider: ProviderIdSchema,
+  model: z.string().min(1),
+  modelRef: z.string().min(1),
+  configVersion: z.string().min(1),
+  resolvedFrom: z.enum(["default", "env", "fallback"]),
+  pricingVersion: z.string().min(1),
+  resolvedAt: z.string().optional(),
+});
+export type ModelRoute = z.infer<typeof ModelRouteSchema>;
+
 export const InputSnapshotSchema = z.object({
   schemaVersion: z.literal("input-snapshot/v1"),
   topic: z.string().min(3).max(500),

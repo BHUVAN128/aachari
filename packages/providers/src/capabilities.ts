@@ -1,21 +1,49 @@
-import type { Domain } from "@upcraft/contracts";
+import type { Domain, ModelCapability } from "@upcraft/contracts";
+import { MODEL_ROUTES, requiredCredentials, resolveModelRoute } from "./model-config.ts";
 
 export type Capability = "intake" | "planning" | "verification" | "illustration" | "voice" | "storage" | "renderer" | "medical-approval";
 
-export type CapabilityResult = { capability: Capability; available: boolean; reason?: string };
+export type CapabilityResult = { capability: Capability; available: boolean; reason?: string | undefined; model?: string | undefined };
 
 const has = (name: string) => Boolean(process.env[name]?.trim());
 
-export const resolveCapabilities = (domain: Domain): CapabilityResult[] => [
-  { capability: "intake", available: has("AI_GATEWAY_API_KEY"), reason: "AI_GATEWAY_API_KEY is required for chat intake" },
-  { capability: "planning", available: has("OPENAI_API_KEY"), reason: "OPENAI_API_KEY is required" },
-  { capability: "verification", available: has("GEMINI_API_KEY"), reason: "GEMINI_API_KEY is required" },
-  { capability: "illustration", available: has("GEMINI_API_KEY"), reason: "GEMINI_API_KEY is required" },
-  { capability: "voice", available: has("ELEVENLABS_API_KEY") && has("ELEVENLABS_VOICE_ID"), reason: "ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID are required" },
+/** Maps a public capability to the model capability whose credentials gate it. */
+const MODEL_CAPABILITY: Partial<Record<Capability, ModelCapability>> = {
+  intake: "intake-brief",
+  planning: "planning",
+  verification: "fact-verification",
+  illustration: "illustration",
+  voice: "narration",
+};
+
+const modelCredentialResult = (capability: Capability, modelCapability: ModelCapability, env?: NodeJS.ProcessEnv): CapabilityResult => {
+  const credentials = requiredCredentials(modelCapability);
+  const available = credentials.every((name) => (env ? Boolean(env[name]?.trim()) : has(name)));
+  const resolved = resolveModelRoute(modelCapability, env);
+  return {
+    capability,
+    available,
+    reason: available ? undefined : `${credentials.join(", ")} ${credentials.length > 1 ? "are" : "is"} required`,
+    model: resolved.modelRef,
+  };
+};
+
+export const resolveCapabilities = (domain: Domain, env?: NodeJS.ProcessEnv): CapabilityResult[] => [
+  modelCredentialResult("intake", MODEL_CAPABILITY.intake!, env),
+  modelCredentialResult("planning", MODEL_CAPABILITY.planning!, env),
+  modelCredentialResult("verification", MODEL_CAPABILITY.verification!, env),
+  modelCredentialResult("illustration", MODEL_CAPABILITY.illustration!, env),
+  modelCredentialResult("voice", MODEL_CAPABILITY.voice!, env),
   { capability: "storage", available: has("S3_ENDPOINT") && has("S3_BUCKET") && has("S3_ACCESS_KEY_ID") && has("S3_SECRET_ACCESS_KEY"), reason: "S3 storage variables are required" },
   { capability: "renderer", available: has("RENDER_OUTPUT_DIR"), reason: "RENDER_OUTPUT_DIR is required" },
   { capability: "medical-approval", available: domain !== "medical" || (has("CLERK_SECRET_KEY") && has("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")), reason: "Clerk keys are required for medical approval" },
 ];
+
+/** The model ref shown for a capability, never a secret value. */
+export const resolvedModelRef = (capability: ModelCapability, env?: NodeJS.ProcessEnv) => resolveModelRoute(capability, env).modelRef;
+
+/** The env key that overrides a model capability's route, for operator display. */
+export const modelEnvKey = (capability: ModelCapability) => MODEL_ROUTES[capability].envKey;
 
 export const assertCapabilities = (domain: Domain) => {
   const requiredCapabilities: Capability[] = ["planning", "verification", "voice", "storage", "renderer"];

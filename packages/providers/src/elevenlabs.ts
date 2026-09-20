@@ -1,4 +1,5 @@
 import { asProviderError } from "./errors.ts";
+import type { ModelRoute } from "@upcraft/contracts";
 import type { WordTiming } from "@upcraft/contracts";
 import type { ProviderResult } from "./usage.ts";
 
@@ -29,16 +30,17 @@ const wordTimingsFromAlignment = (alignment: Alignment): WordTiming[] => {
   return words;
 };
 
-export const synthesizeNarration = async (text: string): Promise<ProviderResult<{ bytes: Buffer; words: WordTiming[] }>> => {
+export const synthesizeNarration = async (route: ModelRoute, text: string): Promise<ProviderResult<{ bytes: Buffer; words: WordTiming[] }>> => {
   const voiceId = required("ELEVENLABS_VOICE_ID");
+  const model = route.model;
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`, {
     method: "POST",
     headers: { "xi-api-key": required("ELEVENLABS_API_KEY"), "Content-Type": "application/json" },
-    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", output_format: "mp3_44100_128" }),
+    body: JSON.stringify({ text, model_id: model, output_format: "mp3_44100_128" }),
   });
   if (!response.ok) throw asProviderError("elevenlabs", response, await response.text());
   const payload = await response.json() as { audio_base64?: string; alignment?: Alignment };
   if (!payload.audio_base64 || !payload.alignment) throw new Error("ElevenLabs response did not include audio and alignment");
   const bytes = Buffer.from(payload.audio_base64, "base64");
-  return { value: { bytes, words: wordTimingsFromAlignment(payload.alignment) }, usage: { model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", inputCharacters: text.length, outputCharacters: bytes.length } };
+  return { value: { bytes, words: wordTimingsFromAlignment(payload.alignment) }, usage: { model, inputCharacters: text.length, outputCharacters: bytes.length } };
 };

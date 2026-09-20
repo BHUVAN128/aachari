@@ -13,7 +13,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { InputSnapshot, QaFinding } from "@upcraft/contracts";
+import type { InputSnapshot, ModelRoute, QaFinding } from "@upcraft/contracts";
 
 export const runStatus = pgEnum("run_status", ["queued", "running", "awaiting_approval", "failed", "completed"]);
 export const intakeSessionStatus = pgEnum("intake_session_status", ["queued", "running", "failed", "completed"]);
@@ -169,6 +169,8 @@ export const stageCheckpoints = pgTable("stage_checkpoints", {
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
   attemptCount: integer("attempt_count").notNull().default(0),
   evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull().default({}),
+  /** Frozen route resolved before this stage started; null for legacy rows. */
+  modelRoute: jsonb("model_route").$type<ModelRoute>(),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("stage_checkpoints_run_stage_idx").on(table.runId, table.stage)]);

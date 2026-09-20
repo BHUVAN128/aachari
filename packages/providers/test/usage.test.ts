@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateStructuredText } from "../src/openai.ts";
+import { resolveModelRoute } from "../src/model-config.ts";
 
 describe("provider usage accounting", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -13,11 +14,10 @@ describe("provider usage accounting", () => {
       usage: { input_tokens: 120, input_tokens_details: { cached_tokens: 80 }, output_tokens: 14, output_tokens_details: { reasoning_tokens: 4 } },
     }), { status: 200, headers: { "content-type": "application/json" } })));
 
-    const result = await generateStructuredText<{ ok: boolean }>({
+    const result = await generateStructuredText<{ ok: boolean }>(resolveModelRoute("planning", { OPENAI_PLANNING_MODEL: "gpt-test" }), {
       schemaName: "usage_test",
       jsonSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false },
       prompt: "short prompt",
-      model: "gpt-test",
     });
 
     expect(result.value).toEqual({ ok: true });

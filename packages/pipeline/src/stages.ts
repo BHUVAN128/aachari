@@ -18,6 +18,7 @@ import {
   SourceEvidenceMapSchema,
   VisualBibleSchema,
   STAGE_ORDER,
+  type ModelRoute,
   type StageName,
   type WordTiming,
 } from "@upcraft/contracts";
@@ -41,15 +42,20 @@ import {
 import {
   assertCapabilities,
   assertStorageAvailable,
+  estimateCostMicrounits,
   generateIllustration,
   generateStructuredText,
   getPrivateObject,
   getPrivateReadUrl,
   putPrivateObject,
   resolveCapabilities,
+  resolveFallbackRoute,
+  resolveModelRoute,
+  reviewWithRoute,
   synthesizeNarration,
-  verifyClaims,
+  PRICING_VERSION,
   ProviderError,
+  STAGE_CAPABILITIES,
   type ProviderUsageSnapshot,
 } from "@upcraft/providers";
 import { deriveFrameCount, probeAudioDurationMs, probeLoudness, probeMedia, rendererVersion, renderLesson, type MediaProbe } from "@upcraft/compositor";
@@ -76,11 +82,31 @@ const blueprintJsonSchema = { type: "object", additionalProperties: false, prope
 const scriptJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["approved-script/v2"] }, narration: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, sceneId: { type: "string" }, text: { type: "string" }, claimIds: { type: "array", items: { type: "string" } }, visualAction: { type: "string" } }, required: ["id", "sceneId", "text", "claimIds", "visualAction"] } } }, required: ["schemaVersion", "narration"] } as Record<string, unknown>;
 const scriptVerificationJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["script-verification/v2"] }, evidence: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { lineId: { type: "string" }, supported: { type: "boolean" }, unsupportedClaimIds: { type: "array", items: { type: "string" } }, rationale: { type: "string" } }, required: ["lineId", "supported", "unsupportedClaimIds", "rationale"] } }, notes: { type: "array", items: { type: "string" } } }, required: ["schemaVersion", "evidence", "notes"] } as Record<string, unknown>;
 const visualBibleJsonSchema = { type: "object", additionalProperties: false, properties: { schemaVersion: { type: "string", enum: ["visual-bible/v1"] }, canvasTexture: { type: "string" }, lineStyle: { type: "string" }, palette: { type: "array", minItems: 2, items: { type: "string" } }, typography: { type: "object", additionalProperties: false, properties: { heading: { type: "string" }, body: { type: "string" }, caption: { type: "string" } }, required: ["heading", "body", "caption"] }, captionSafeArea: { type: "object", additionalProperties: false, properties: { top: { type: "number" }, right: { type: "number" }, bottom: { type: "number" }, left: { type: "number" } }, required: ["top", "right", "bottom", "left"] }, persistentEntities: { type: "array", items: { type: "object", additionalProperties: false, properties: { id: { type: "string" }, description: { type: "string" } }, required: ["id", "description"] } }, camera: { type: "object", additionalProperties: false, properties: { behavior: { type: "string" }, transitions: { type: "array", items: { type: "string" } } }, required: ["behavior", "transitions"] }, prohibitedVisualPatterns: { type: "array", items: { type: "string" } } }, required: ["schemaVersion", "canvasTexture", "lineStyle", "palette", "typography", "captionSafeArea", "persistentEntities", "camera", "prohibitedVisualPatterns"] } as Record<string, unknown>;
-const routeForStage = (stage: StageName) => {
-  if (["research", "blueprint", "script", "visual-bible"].includes(stage)) return { provider: "openai", model: process.env.OPENAI_PLANNING_MODEL ?? "gpt-5.6-terra" };
-  if (stage === "fact-verification") return { provider: "gemini", model: process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash" };
-  if (stage === "voiceover") return { provider: "elevenlabs", model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2" };
-  return { provider: "deterministic", model: "repository-code" };
+/**
+ * Resolves the frozen route for a stage before it starts. `undefined` marks a
+ * deterministic stage, which keeps the `deterministic` provenance shape older
+ * records already use.
+ */
+export const resolveStageRoute = (stage: StageName): ModelRoute | undefined => {
+  const capability = STAGE_CAPABILITIES[stage];
+  return capability ? resolveModelRoute(capability) : undefined;
+};
+const stageRoute = resolveStageRoute;
+const deterministicProvenance = { provider: "deterministic", model: "repository-code" };
+const routeProvenance = (route: ModelRoute | undefined) => route
+  ? { provider: route.provider, model: route.model, modelRef: route.modelRef, configVersion: route.configVersion, resolvedFrom: route.resolvedFrom }
+  : deterministicProvenance;
+
+/**
+ * A manifest layer that names a selected asset which is not available at render
+ * time must block the render; a placeholder would silently ship a broken visual.
+ */
+export const missingRenderAssets = (
+  layers: Array<{ id: string; assetId?: string | undefined }>,
+  availableAssetIds: Iterable<string>,
+) => {
+  const available = new Set(availableAssetIds);
+  return layers.filter((layer) => layer.assetId && !available.has(layer.assetId));
 };
 export const MAX_ARTIFACT_ATTEMPTS = 3;
 export const isArtifactValidationFailure = (error: unknown) => error instanceof ZodError || error instanceof SyntaxError;
@@ -129,15 +155,16 @@ const saveArtifact = async (params: { runId: string; stage: StageName; role: str
   const existing = await getArtifact(params.runId, params.role);
   if (existing?.inputHash === params.inputHash) return existing;
   const version = existing ? existing.version + 1 : 1;
-  const route = routeForStage(params.stage);
+  const route = stageRoute(params.stage);
+  const provenance = routeProvenance(route);
   const [artifact] = await db.insert(artifacts).values({
     runId: params.runId, stage: params.stage, role: params.role, version, status: "valid",
     schemaVersion: params.schemaVersion, content: params.content, inputHash: params.inputHash,
-    sha256: sha(params.content), provenance: { ...route, ...(params.provenance ?? {}) }, validatedAt: new Date(),
+    sha256: sha(params.content), provenance: { ...provenance, ...(params.provenance ?? {}) }, validatedAt: new Date(),
   }).returning();
   if (!artifact) throw new Error("Artifact persistence failed");
   if (existing) await db.update(artifacts).set({ status: "superseded" }).where(eq(artifacts.id, existing.id));
-  await db.insert(artifactAttempts).values({ artifactId: artifact.id, attempt: 1, inputHash: params.inputHash, outputHash: artifact.sha256 ?? undefined, schemaVersion: params.schemaVersion, provider: route.provider, model: route.model, promptVersion: `${params.stage}/v1`, outcome: "validated", validationEvidence: { schemaVersion: params.schemaVersion } });
+  await db.insert(artifactAttempts).values({ artifactId: artifact.id, attempt: 1, inputHash: params.inputHash, outputHash: artifact.sha256 ?? undefined, schemaVersion: params.schemaVersion, provider: route?.provider ?? "deterministic", model: route?.model ?? "repository-code", promptVersion: `${params.stage}/v1`, outcome: "validated", validationEvidence: { schemaVersion: params.schemaVersion } });
   return artifact;
 };
 
@@ -154,7 +181,7 @@ export const recordInvalidArtifactAttempt = async (params: { runId: string; stag
   if (!artifact) return;
   await db.insert(artifactAttempts).values({
     artifactId: artifact.id, attempt: params.attempt, inputHash: params.inputHash, schemaVersion: `${params.stage}/attempt`,
-    provider: routeForStage(params.stage).provider, model: routeForStage(params.stage).model, promptVersion: `${params.stage}/v1`, outcome: "invalid",
+    provider: stageRoute(params.stage)?.provider ?? "deterministic", model: stageRoute(params.stage)?.model ?? "repository-code", promptVersion: `${params.stage}/v1`, outcome: "invalid",
     errorCode: "ARTIFACT_VALIDATION", errorMessage: message, validationEvidence: { message, retryable: params.attempt < 3 },
   });
 };
@@ -178,31 +205,38 @@ const failWithFindings = async (runId: string, scope: string, findings: Array<{ 
   throw new Error(`${scope} failed: ${findings.map((finding) => finding.rule).join(", ")}`);
 };
 
-const pricingVersion = "pricing/2026-09-17";
-const estimateCostMicrounits = (provider: string, usage: ProviderUsageSnapshot) => {
-  const rates: Record<string, { input: number; output: number }> = {
-    openai: { input: 2, output: 12 },
-    gemini: { input: 0.75, output: 3.75 },
-  };
-  const rate = rates[provider];
-  if (provider === "elevenlabs") {
-    const perThousandCharacters = Number(process.env.ELEVENLABS_COST_MICRODOLLARS_PER_1K_CHARS);
-    if (!Number.isFinite(perThousandCharacters) || usage.inputCharacters === undefined) return undefined;
-    return Math.ceil((usage.inputCharacters / 1_000) * perThousandCharacters);
-  }
-  if (!rate || usage.inputTokens === undefined && usage.outputTokens === undefined) return undefined;
-  return Math.round((usage.inputTokens ?? 0) * rate.input + (usage.outputTokens ?? 0) * rate.output);
-};
-
-const recordUsage = async (runId: string, stage: StageName, provider: string, fallbackModel: string, startedAt: number, usage: ProviderUsageSnapshot = {}, promptVersion = `${stage}/v2`, context = {}, outcome = "completed", errorCode?: string) => {
+const recordUsage = async (runId: string, stage: StageName, provider: string, model: string, startedAt: number, usage: ProviderUsageSnapshot = {}, promptVersion = `${stage}/v2`, context = {}, outcome = "completed", errorCode?: string) => {
   await getDb().insert(providerUsage).values({
-    runId, stage, provider, model: usage.model ?? fallbackModel, requestId: usage.requestId,
+    runId, stage, provider, model: usage.model ?? model, requestId: usage.requestId,
     outcome, errorCode, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens,
     outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens,
     inputCharacters: usage.inputCharacters, outputCharacters: usage.outputCharacters,
-    costMicrounits: estimateCostMicrounits(provider, usage), pricingVersion,
+    costMicrounits: estimateCostMicrounits(provider, usage), pricingVersion: PRICING_VERSION,
     promptVersion, contextManifest: assertTelemetrySafe(context), latencyMs: Date.now() - startedAt,
   });
+};
+
+/**
+ * Runs a provider call with at most one bounded fallback. A declared fallback
+ * route addresses a classified transient failure only; the failed attempt is
+ * recorded against the route that failed and the fallback runs as a new
+ * recorded attempt. The caller still validates the artifact identically, so
+ * quality is never silently downgraded.
+ */
+export const withFallback = async <T>(
+  route: ModelRoute,
+  attempt: (route: ModelRoute) => Promise<T>,
+  recordFailure: (failedRoute: ModelRoute, error: ProviderError) => Promise<void>,
+): Promise<{ value: T; route: ModelRoute }> => {
+  try {
+    return { value: await attempt(route), route };
+  } catch (error) {
+    if (!(error instanceof ProviderError) || !error.retryable) throw error;
+    const fallback = resolveFallbackRoute(route.capability);
+    if (!fallback) throw error;
+    await recordFailure(route, error);
+    return { value: await attempt(fallback), route: fallback };
+  }
 };
 
 const runPreflight = async (runId: string) => {
@@ -235,13 +269,16 @@ const runResearch = async (runId: string) => {
   const evidenceMapArtifact = await saveArtifact({ runId, stage: "research", role: "source-evidence-map", schemaVersion: evidenceMap.schemaVersion, inputHash: sha(lockedSources.map((source) => source.sha256)), content: evidenceMap, provenance: { provider: "deterministic", model: "source-segmentation/v1" } });
   const sourceContext = evidenceMap.sources.map((source) => `SOURCE ${source.sourceId} HASH ${source.sourceHash}\n${source.segments.map((segment) => `SEGMENT ${segment.id} [${segment.startOffset}:${segment.endOffset}]\n${segment.text}`).join("\n")}`).join("\n\n");
   const startedAt = Date.now();
-  const raw = await generateStructuredText<Json>({
+  const route = stageRoute("research")!;
+  const raw = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, {
     schemaName: "fact_pack",
     jsonSchema: factPackJsonSchema,
     prompt: `${await validationFeedback(runId, "research")}Create a source-grounded fact pack. Use only the supplied source segments. Return JSON with schemaVersion "fact-pack/v2", claims [{id, text, evidence {sourceId, sourceHash, segmentIds, locator}, critical}], and caveats [{text, evidence?}]. Every claim must cite one or more supplied segment IDs. Do not quote or reproduce source text in the output.\n\n${sourceContext}`,
+  }), async (failedRoute, error) => {
+    await recordUsage(runId, "research", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "research/v2", { projection: "source-full-segmented/v1" }, "failed", error.code);
   });
-  await recordUsage(runId, "research", "openai", process.env.OPENAI_PLANNING_MODEL ?? "gpt-5.6-terra", startedAt, raw.usage, "research/v2", contextManifest("source-full-segmented/v1", [{ role: "source-evidence-map", hash: evidenceMapArtifact.sha256 ?? sha(evidenceMap), chars: sourceContext.length, itemCount: evidenceMap.sources.reduce((sum, source) => sum + source.segments.length, 0) }]));
-  const factPack = FactPackSchema.parse(raw.value);
+  await recordUsage(runId, "research", raw.route.provider, raw.route.model, startedAt, raw.value.usage, "research/v2", contextManifest("source-full-segmented/v1", [{ role: "source-evidence-map", hash: evidenceMapArtifact.sha256 ?? sha(evidenceMap), chars: sourceContext.length, itemCount: evidenceMap.sources.reduce((sum, source) => sum + source.segments.length, 0) }]));
+  const factPack = FactPackSchema.parse(raw.value.value);
   for (const claim of factPack.claims) sourceEvidenceSegments(evidenceMap, [claim.evidence]);
   for (const caveat of factPack.caveats) if (caveat.evidence) sourceEvidenceSegments(evidenceMap, [caveat.evidence]);
   return saveArtifact({ runId, stage: "research", role: "fact-pack", schemaVersion: factPack.schemaVersion, inputHash: sha(sources.map((source) => source.sha256)), content: factPack });
@@ -251,9 +288,13 @@ const runFactVerification = async (runId: string) => {
   const factPack = requireContent(await getArtifact(runId, "fact-pack"), "fact-pack");
   const evidenceMap = SourceEvidenceMapSchema.parse(requireContent(await getArtifact(runId, "source-evidence-map"), "source-evidence-map"));
   const startedAt = Date.now();
+  const route = stageRoute("fact-verification")!;
   const verificationContext = projectFactVerificationContext(FactPackSchema.parse(factPack), evidenceMap);
-  const verificationResult = await verifyClaims(`Independently verify every claim against only its supplied source segments. Return schemaVersion "claim-verification/v2", one evidence item per claim with claimId, sourceId, segmentIds, supported, rationale, and notes. Do not add facts, use uncited sources, or reproduce source text.\n${JSON.stringify(verificationContext)}`);
-  await recordUsage(runId, "fact-verification", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", startedAt, verificationResult.usage, "fact-verification/v2", contextManifest("claim-local-evidence/v1", [{ role: "fact-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: verificationContext.evidenceSegments.length }]));
+  const verificationRun = await withFallback(route, (attemptRoute) => reviewWithRoute(attemptRoute, `Independently verify every claim against only its supplied source segments. Return schemaVersion "claim-verification/v2", one evidence item per claim with claimId, sourceId, segmentIds, supported, rationale, and notes. Do not add facts, use uncited sources, or reproduce source text.\n${JSON.stringify(verificationContext)}`), async (failedRoute, error) => {
+    await recordUsage(runId, "fact-verification", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "fact-verification/v2", { projection: "claim-local-evidence/v1" }, "failed", error.code);
+  });
+  const verificationResult = verificationRun.value;
+  await recordUsage(runId, "fact-verification", verificationRun.route.provider, verificationRun.route.model, startedAt, verificationResult.usage, "fact-verification/v2", contextManifest("claim-local-evidence/v1", [{ role: "fact-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: verificationContext.evidenceSegments.length }]));
   const verification = ClaimVerificationSchema.parse(verificationResult.value);
   const parsedFactPack = FactPackSchema.parse(factPack);
   assertClaimVerificationComplete(verification, parsedFactPack);
@@ -261,7 +302,7 @@ const runFactVerification = async (runId: string) => {
     const claim = parsedFactPack.claims.find((candidate) => candidate.id === entry.claimId)!;
     sourceEvidenceSegments(evidenceMap, [{ sourceId: entry.sourceId, sourceHash: claim.evidence.sourceHash, segmentIds: entry.segmentIds }]);
   }
-  const claimRows = parsedFactPack.claims.map((claim) => ({ runId, sourceId: claim.evidence.sourceId, claim: claim.text, locator: claim.evidence.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: new Date(), verifierModel: process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash" }));
+  const claimRows = parsedFactPack.claims.map((claim) => ({ runId, sourceId: claim.evidence.sourceId, claim: claim.text, locator: claim.evidence.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: new Date(), verifierModel: verificationRun.route.model }));
   if (claimRows.length && !(await getDb().select({ id: sourceClaims.id }).from(sourceClaims).where(eq(sourceClaims.runId, runId))).length) await getDb().insert(sourceClaims).values(claimRows);
   return saveArtifact({ runId, stage: "fact-verification", role: "fact-verification", schemaVersion: "fact-verification/v2", inputHash: sha(factPack), content: verification });
 };
@@ -271,9 +312,12 @@ const runBlueprint = async (runId: string) => {
   const run = await getRun(runId);
   if (!run) throw new Error("Run not found");
   const startedAt = Date.now();
-  const raw = await generateStructuredText<Json>({ schemaName: "lesson_blueprint", jsonSchema: blueprintJsonSchema, prompt: `${await validationFeedback(runId, "blueprint")}Create an educational lesson blueprint for ${run.title}. Return schemaVersion "lesson-blueprint/v2", objective, prerequisites, hook, recap, optional knowledgeCheck {question,options,answerIndex}, and scenes [{id,order,purpose,claimIds,visualBeat}]. Each scene must have one meaningful visual beat, strictly increasing order, at least one cited claim ID, and together the scenes must cover every critical claim. Do not invent claims.\n${JSON.stringify(factPack)}` });
-  await recordUsage(runId, "blueprint", "openai", process.env.OPENAI_PLANNING_MODEL ?? "gpt-5.6-terra", startedAt, raw.usage, "blueprint/v2", contextManifest("verified-fact-catalog/v1", [{ role: "fact-pack", hash: sha(factPack), chars: JSON.stringify(factPack).length, itemCount: FactPackSchema.parse(factPack).claims.length }]));
-  const blueprint = BlueprintV2Schema.parse(raw.value);
+  const route = stageRoute("blueprint")!;
+  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "lesson_blueprint", jsonSchema: blueprintJsonSchema, prompt: `${await validationFeedback(runId, "blueprint")}Create an educational lesson blueprint for ${run.title}. Return schemaVersion "lesson-blueprint/v2", objective, prerequisites, hook, recap, optional knowledgeCheck {question,options,answerIndex}, and scenes [{id,order,purpose,claimIds,visualBeat}]. Each scene must have one meaningful visual beat, strictly increasing order, at least one cited claim ID, and together the scenes must cover every critical claim. Do not invent claims.\n${JSON.stringify(factPack)}` }), async (failedRoute, error) => {
+    await recordUsage(runId, "blueprint", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "blueprint/v2", { projection: "verified-fact-catalog/v1" }, "failed", error.code);
+  });
+  await recordUsage(runId, "blueprint", generated.route.provider, generated.route.model, startedAt, generated.value.usage, "blueprint/v2", contextManifest("verified-fact-catalog/v1", [{ role: "fact-pack", hash: sha(factPack), chars: JSON.stringify(factPack).length, itemCount: FactPackSchema.parse(factPack).claims.length }]));
+  const blueprint = BlueprintV2Schema.parse(generated.value.value);
   const parsedFactPack = FactPackSchema.parse(requireContent(await getArtifact(runId, "fact-pack"), "fact-pack"));
   const allowedClaimIds = new Set(parsedFactPack.claims.map((claim) => claim.id));
   const blueprintIssues = validateBlueprint({ blueprint, criticalClaimIds: parsedFactPack.claims.filter((claim) => claim.critical).map((claim) => claim.id), allowedClaimIds });
@@ -287,14 +331,19 @@ const runScript = async (runId: string) => {
   const blueprintContent = requireContent<{ scenes: Array<{ id: string; claimIds: string[]; purpose: string; visualBeat: string }> }>(blueprint, "lesson-blueprint");
   const factPackContent = FactPackSchema.parse(requireContent(factPack, "fact-pack"));
   const scriptContext = projectScriptContext(factPackContent, blueprintContent);
-  const raw = await generateStructuredText<Json>({ schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` });
-  await recordUsage(runId, "script", "openai", process.env.OPENAI_PLANNING_MODEL ?? "gpt-5.6-terra", startedAt, raw.usage, "script/v2", contextManifest("scene-claim-projection/v1", [{ role: "script-context", hash: sha(scriptContext), chars: JSON.stringify(scriptContext).length, itemCount: scriptContext.claims.length + scriptContext.scenes.length }]));
-  const script = ApprovedScriptSchema.parse(raw.value); const claimIds = new Set(factPackContent.claims.map((claim) => claim.id)); const sceneIds = new Set(blueprintContent.scenes.map((scene) => scene.id)); if (script.narration.some((line) => !sceneIds.has(line.sceneId) || line.claimIds.some((claimId) => !claimIds.has(claimId)))) throw new Error("Script contains an invalid scene or claim reference");
+  const route = stageRoute("script")!;
+  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` }), async (failedRoute, error) => {
+    await recordUsage(runId, "script", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "script/v2", { projection: "scene-claim-projection/v1" }, "failed", error.code);
+  });
+  await recordUsage(runId, "script", generated.route.provider, generated.route.model, startedAt, generated.value.usage, "script/v2", contextManifest("scene-claim-projection/v1", [{ role: "script-context", hash: sha(scriptContext), chars: JSON.stringify(scriptContext).length, itemCount: scriptContext.claims.length + scriptContext.scenes.length }]));
+  const script = ApprovedScriptSchema.parse(generated.value.value); const claimIds = new Set(factPackContent.claims.map((claim) => claim.id)); const sceneIds = new Set(blueprintContent.scenes.map((scene) => scene.id)); if (script.narration.some((line) => !sceneIds.has(line.sceneId) || line.claimIds.some((claimId) => !claimIds.has(claimId)))) throw new Error("Script contains an invalid scene or claim reference");
   const verifierStartedAt = Date.now();
   const verificationContext = { schemaVersion: "script-verification-context/v1", narration: script.narration, claims: factPackContent.claims.filter((claim) => new Set(script.narration.flatMap((line) => line.claimIds)).has(claim.id)) };
-  const verificationResult = await verifyClaims(`Independently verify every narration line against only its supplied verified claims. Return schemaVersion "script-verification/v2", one evidence item per line with lineId, supported, unsupportedClaimIds, rationale, and notes. Do not rewrite the script.\n${JSON.stringify(verificationContext)}`);
-  await recordUsage(runId, "script", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", verifierStartedAt, verificationResult.usage, "script-verification/v2", contextManifest("line-claim-projection/v1", [{ role: "script-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: script.narration.length }]));
-  const verification = ScriptVerificationSchema.parse(verificationResult.value);
+  const verificationRun = await withFallback(resolveModelRoute("script-verification"), (attemptRoute) => reviewWithRoute(attemptRoute, `Independently verify every narration line against only its supplied verified claims. Return schemaVersion "script-verification/v2", one evidence item per line with lineId, supported, unsupportedClaimIds, rationale, and notes. Do not rewrite the script.\n${JSON.stringify(verificationContext)}`), async (failedRoute, error) => {
+    await recordUsage(runId, "script", failedRoute.provider, failedRoute.model, verifierStartedAt, { model: failedRoute.model }, "script-verification/v2", { projection: "line-claim-projection/v1" }, "failed", error.code);
+  });
+  await recordUsage(runId, "script", verificationRun.route.provider, verificationRun.route.model, verifierStartedAt, verificationRun.value.usage, "script-verification/v2", contextManifest("line-claim-projection/v1", [{ role: "script-verification-context", hash: sha(verificationContext), chars: JSON.stringify(verificationContext).length, itemCount: script.narration.length }]));
+  const verification = ScriptVerificationSchema.parse(verificationRun.value.value);
   assertScriptVerificationComplete(verification, script);
   return saveArtifact({ runId, stage: "script", role: "approved-script", schemaVersion: script.schemaVersion, inputHash: sha([blueprint?.sha256, factPack?.sha256]), content: script });
 };
@@ -303,9 +352,12 @@ const runVisualBible = async (runId: string) => {
   const script = ApprovedScriptSchema.parse(requireContent(await getArtifact(runId, "approved-script"), "approved-script"));
   const startedAt = Date.now();
   const visualContext = projectVisualContext(script);
-  const bibleResult = await generateStructuredText<Json>({ schemaName: "visual_bible", jsonSchema: visualBibleJsonSchema, prompt: `${await validationFeedback(runId, "visual-bible")}Create a locked visual bible from this narration/visual-action projection. Return schemaVersion "visual-bible/v1", canvasTexture, lineStyle, palette, typography {heading,body,caption}, captionSafeArea {top,right,bottom,left} as fractions, persistentEntities [{id,description}], camera {behavior,transitions}, and prohibitedVisualPatterns. Do not alter narration.\n${JSON.stringify(visualContext)}` });
-  await recordUsage(runId, "visual-bible", "openai", process.env.OPENAI_PLANNING_MODEL ?? "gpt-5.6-terra", startedAt, bibleResult.usage, "visual-bible/v1", contextManifest("visual-action-projection/v1", [{ role: "visual-context", hash: sha(visualContext), chars: JSON.stringify(visualContext).length, itemCount: visualContext.narration.length }]));
-  const bible = VisualBibleSchema.parse(bibleResult.value);
+  const route = stageRoute("visual-bible")!;
+  const bibleRun = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "visual_bible", jsonSchema: visualBibleJsonSchema, prompt: `${await validationFeedback(runId, "visual-bible")}Create a locked visual bible from this narration/visual-action projection. Return schemaVersion "visual-bible/v1", canvasTexture, lineStyle, palette, typography {heading,body,caption}, captionSafeArea {top,right,bottom,left} as fractions, persistentEntities [{id,description}], camera {behavior,transitions}, and prohibitedVisualPatterns. Do not alter narration.\n${JSON.stringify(visualContext)}` }), async (failedRoute, error) => {
+    await recordUsage(runId, "visual-bible", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "visual-bible/v1", { projection: "visual-action-projection/v1" }, "failed", error.code);
+  });
+  await recordUsage(runId, "visual-bible", bibleRun.route.provider, bibleRun.route.model, startedAt, bibleRun.value.usage, "visual-bible/v1", contextManifest("visual-action-projection/v1", [{ role: "visual-context", hash: sha(visualContext), chars: JSON.stringify(visualContext).length, itemCount: visualContext.narration.length }]));
+  const bible = VisualBibleSchema.parse(bibleRun.value.value);
   return saveArtifact({ runId, stage: "visual-bible", role: "visual-bible", schemaVersion: "visual-bible/v1", inputHash: sha(script), content: bible });
 };
 
@@ -380,7 +432,8 @@ const runAssets = async (runId: string) => {
   // omission, and a selected illustration always requires human review before
   // publication because image-model style/text adherence is a reviewer gate.
   const illustrationAvailable = resolveCapabilities(run.domain).some((capability) => capability.capability === "illustration" && capability.available);
-  const illustrationModel = process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image";
+  const illustrationRoute = stageRoute("assets");
+  const illustrationModel = illustrationRoute?.model ?? "gemini-3.1-flash-image";
   const illustrationDecisions = await Promise.all(planned.map(async ({ direction, brief }): Promise<{ sceneId: string; choice: "selected" | "omitted"; role?: string; assetId?: string; reason: string }> => {
     if (!brief.illustration.required) return { sceneId: direction.sceneId, choice: "omitted", reason: brief.illustration.reason ?? "No illustration planned for this scene." };
     const role = "illustration-" + direction.sceneId;
@@ -390,7 +443,7 @@ const runAssets = async (runId: string) => {
     const startedAt = Date.now();
     try {
       const stylePrompt = `${brief.illustration.prompt}\nVisual bible: canvas texture ${bible.canvasTexture}; line style ${bible.lineStyle}; palette ${bible.palette.join(", ")}; body font ${bible.typography.body}.`;
-      const generated = await generateIllustration(stylePrompt);
+      const generated = await generateIllustration(illustrationRoute ?? resolveModelRoute("illustration"), stylePrompt);
       const issues = validateIllustrationCandidate({ bytes: generated.bytes, mimeType: generated.mimeType });
       await recordUsage(runId, "assets", "gemini", illustrationModel, startedAt, generated.usage, "illustration/v1", contextManifest("scene-asset-brief/v1", [{ role: "scene-asset-briefs", hash: briefArtifact.sha256 ?? sha(briefs), chars: JSON.stringify(brief).length, itemCount: 1 }]), issues.length ? "failed" : "completed", issues.length ? "ILLUSTRATION_VERIFICATION" : undefined);
       if (issues.length) {
@@ -437,8 +490,9 @@ const runVoiceover = async (runId: string) => {
   const existing = await getArtifact(runId, "voiceover");
   if (existing?.inputHash === inputHash) return existing;
   const startedAt = Date.now();
-  const narrationResult = await synthesizeNarration(narrationText);
-  await recordUsage(runId, "voiceover", "elevenlabs", process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", startedAt, narrationResult.usage, "voiceover/v2", contextManifest("canonical-narration/v1", [{ role: "approved-script", hash: sha(script), chars: narrationText.length, itemCount: script.narration.length }]));
+  const voiceRoute = stageRoute("voiceover")!;
+  const narrationResult = await synthesizeNarration(voiceRoute, narrationText);
+  await recordUsage(runId, "voiceover", voiceRoute.provider, voiceRoute.model, startedAt, narrationResult.usage, "voiceover/v2", contextManifest("canonical-narration/v1", [{ role: "approved-script", hash: sha(script), chars: narrationText.length, itemCount: script.narration.length }]));
   const narration = narrationResult.value;
   const probeDir = await mkdtemp(join(tmpdir(), "upcraft-voice-"));
   let measuredDurationMs: number;
@@ -458,7 +512,7 @@ const runVoiceover = async (runId: string) => {
   ];
   if (voiceIssues.length) await failWithFindings(runId, "Voiceover QA", voiceIssues);
   const object = await putPrivateObject({ key: `runs/${runId}/audio/narration.mp3`, body: narration.bytes, contentType: "audio/mpeg" });
-  const [asset] = await getDb().insert(mediaAssets).values({ runId, role: "narration", objectKey: object.key, sha256: object.sha256, mimeType: "audio/mpeg", byteSize: object.byteSize, selected: true, provenance: { voiceId: process.env.ELEVENLABS_VOICE_ID, model: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2", loudness, curatedTerms } }).onConflictDoNothing().returning();
+  const [asset] = await getDb().insert(mediaAssets).values({ runId, role: "narration", objectKey: object.key, sha256: object.sha256, mimeType: "audio/mpeg", byteSize: object.byteSize, selected: true, provenance: { voiceId: process.env.ELEVENLABS_VOICE_ID, model: voiceRoute.model, loudness, curatedTerms } }).onConflictDoNothing().returning();
   const stableAsset = asset ?? (await getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.role, "narration"), eq(mediaAssets.sha256, object.sha256))))[0];
   if (!stableAsset) throw new Error("Narration asset persistence failed");
   return saveArtifact({ runId, stage: "voiceover", role: "voiceover", schemaVersion: "voiceover/v1", inputHash, content: { assetId: stableAsset.id, objectKey: object.key, words: narration.words, loudness, curatedTerms } });
@@ -699,9 +753,12 @@ const runQa = async (runId: string) => {
       captions: manifest.captions,
       preview: { durationMs: previewProbe.durationMs, width: previewProbe.width, height: previewProbe.height, fps: previewProbe.fps, hasAudio: previewProbe.hasAudio },
     };
-    const reviewResult = await verifyClaims(`Independently review this lesson end to end against its verified claims and stated objective. Return schemaVersion "consolidated-review/v1" and issues [{domain,severity,evidence,remediation}], where domain is factual, pedagogy, visual, or audio. Use severity "critical" only for a genuine defect that blocks release. Do not rewrite the script, invent facts, or add labels.\n${JSON.stringify(reviewContext)}`);
-    await recordUsage(runId, "qa", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", reviewStartedAt, reviewResult.usage, "consolidated-review/v1", contextManifest("consolidated-review-context/v1", [{ role: "fact-pack-script-preview", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length + manifest.captions.length }]));
-    return consolidatedReviewQa(ConsolidatedReviewSchema.parse(reviewResult.value));
+    const qaRoute = resolveModelRoute("qa-review");
+    const reviewRun = await withFallback(qaRoute, (attemptRoute) => reviewWithRoute(attemptRoute, `Independently review this lesson end to end against its verified claims and stated objective. Return schemaVersion "consolidated-review/v1" and issues [{domain,severity,evidence,remediation}], where domain is factual, pedagogy, visual, or audio. Use severity "critical" only for a genuine defect that blocks release. Do not rewrite the script, invent facts, or add labels.\n${JSON.stringify(reviewContext)}`), async (failedRoute, error) => {
+      await recordUsage(runId, "qa", failedRoute.provider, failedRoute.model, reviewStartedAt, { model: failedRoute.model }, "consolidated-review/v1", { projection: "consolidated-review-context/v1" }, "failed", error.code);
+    });
+    await recordUsage(runId, "qa", reviewRun.route.provider, reviewRun.route.model, reviewStartedAt, reviewRun.value.usage, "consolidated-review/v1", contextManifest("consolidated-review-context/v1", [{ role: "fact-pack-script-preview", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length + manifest.captions.length }]));
+    return consolidatedReviewQa(ConsolidatedReviewSchema.parse(reviewRun.value.value));
   })();
 
   // Tier A: deterministic, zero-token gates. Nothing here can be satisfied by a
@@ -748,7 +805,7 @@ const runReleaseRecord = async (runId: string) => {
   const clientStyleIssues = validateClientStyleApproval({ domain: run.domain, approvals: approvalRows.map((approval) => ({ decision: approval.decision, notes: approval.notes })) });
   if (clientStyleIssues.length) await failWithFindings(runId, "Client production policy", clientStyleIssues);
   const intakeAttemptsRows = intake ? await db.select().from(intakeAttempts).where(eq(intakeAttempts.sessionId, intake.id)) : [];
-  const recordContent = { schemaVersion: "release-record/v1", releasedAt: new Date().toISOString(), run: { id: run.id, title: run.title, domain: run.domain, snapshot: run.snapshot, snapshotHash: run.snapshotHash }, intake: intake ? { sessionId: intake.id, inputHash: intake.inputHash, brief: intake.brief, briefHash: intake.briefHash, attempts: intakeAttemptsRows.map((attempt) => ({ attempt: attempt.attempt, provider: attempt.provider, model: attempt.model, requestId: attempt.requestId, promptVersion: attempt.promptVersion, outcome: attempt.outcome, inputTokens: attempt.inputTokens, cachedInputTokens: attempt.cachedInputTokens, outputTokens: attempt.outputTokens, reasoningTokens: attempt.reasoningTokens, latencyMs: attempt.latencyMs, contextManifest: attempt.contextManifest })) } : null, finalOutput: output, manifest: manifestArtifact.content, qa: qaArtifact.content, sources: sources.map((source) => ({ id: source.id, name: source.originalName, url: source.sourceUrl, sha256: source.sha256, sourceBytesSha256: source.sourceBytesSha256, retrievedAt: source.retrievedAt?.toISOString() ?? null })), claims: claims.map((claim) => ({ id: claim.id, sourceId: claim.sourceId, claim: claim.claim, locator: claim.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: claim.verifiedAt?.toISOString() ?? null, verifierModel: claim.verifierModel })), artifacts: artifactRows.map((artifact) => ({ id: artifact.id, stage: artifact.stage, role: artifact.role, version: artifact.version, sha256: artifact.sha256, inputHash: artifact.inputHash, schemaVersion: artifact.schemaVersion, provenance: artifact.provenance })), checkpoints: checkpoints.map((checkpoint) => ({ stage: checkpoint.stage, inputHash: checkpoint.inputHash, outputHash: checkpoint.outputHash, outcome: checkpoint.outcome, evidence: checkpoint.evidence })), providerUsage: usage.map((entry) => ({ stage: entry.stage, provider: entry.provider, model: entry.model, requestId: entry.requestId, outcome: entry.outcome, latencyMs: entry.latencyMs, inputTokens: entry.inputTokens, cachedInputTokens: entry.cachedInputTokens, outputTokens: entry.outputTokens, reasoningTokens: entry.reasoningTokens, inputCharacters: entry.inputCharacters, outputCharacters: entry.outputCharacters, costMicrounits: entry.costMicrounits, pricingVersion: entry.pricingVersion, promptVersion: entry.promptVersion, contextManifest: entry.contextManifest })), approvals: approvalRows.map((approval) => ({ decision: approval.decision, reviewerId: approval.reviewerId, clinicianApproverId: approval.clinicianApproverId, notes: approval.notes })), renders: renders.map((renderOutput) => ({ kind: renderOutput.kind, sha256: renderOutput.sha256, durationMs: renderOutput.durationMs, width: renderOutput.width, height: renderOutput.height })) };
+  const recordContent = { schemaVersion: "release-record/v1", releasedAt: new Date().toISOString(), run: { id: run.id, title: run.title, domain: run.domain, snapshot: run.snapshot, snapshotHash: run.snapshotHash }, intake: intake ? { sessionId: intake.id, inputHash: intake.inputHash, brief: intake.brief, briefHash: intake.briefHash, attempts: intakeAttemptsRows.map((attempt) => ({ attempt: attempt.attempt, provider: attempt.provider, model: attempt.model, requestId: attempt.requestId, promptVersion: attempt.promptVersion, outcome: attempt.outcome, inputTokens: attempt.inputTokens, cachedInputTokens: attempt.cachedInputTokens, outputTokens: attempt.outputTokens, reasoningTokens: attempt.reasoningTokens, latencyMs: attempt.latencyMs, contextManifest: attempt.contextManifest })) } : null, finalOutput: output, manifest: manifestArtifact.content, qa: qaArtifact.content, sources: sources.map((source) => ({ id: source.id, name: source.originalName, url: source.sourceUrl, sha256: source.sha256, sourceBytesSha256: source.sourceBytesSha256, retrievedAt: source.retrievedAt?.toISOString() ?? null })), claims: claims.map((claim) => ({ id: claim.id, sourceId: claim.sourceId, claim: claim.claim, locator: claim.locator, evidence: claim.evidence, critical: claim.critical, verifiedAt: claim.verifiedAt?.toISOString() ?? null, verifierModel: claim.verifierModel })), artifacts: artifactRows.map((artifact) => ({ id: artifact.id, stage: artifact.stage, role: artifact.role, version: artifact.version, sha256: artifact.sha256, inputHash: artifact.inputHash, schemaVersion: artifact.schemaVersion, provenance: artifact.provenance })), checkpoints: checkpoints.map((checkpoint) => ({ stage: checkpoint.stage, inputHash: checkpoint.inputHash, outputHash: checkpoint.outputHash, outcome: checkpoint.outcome, evidence: checkpoint.evidence, modelRoute: checkpoint.modelRoute ?? null })), providerUsage: usage.map((entry) => ({ stage: entry.stage, provider: entry.provider, model: entry.model, requestId: entry.requestId, outcome: entry.outcome, latencyMs: entry.latencyMs, inputTokens: entry.inputTokens, cachedInputTokens: entry.cachedInputTokens, outputTokens: entry.outputTokens, reasoningTokens: entry.reasoningTokens, inputCharacters: entry.inputCharacters, outputCharacters: entry.outputCharacters, costMicrounits: entry.costMicrounits, pricingVersion: entry.pricingVersion, promptVersion: entry.promptVersion, contextManifest: entry.contextManifest })), approvals: approvalRows.map((approval) => ({ decision: approval.decision, reviewerId: approval.reviewerId, clinicianApproverId: approval.clinicianApproverId, notes: approval.notes })), renders: renders.map((renderOutput) => ({ kind: renderOutput.kind, sha256: renderOutput.sha256, durationMs: renderOutput.durationMs, width: renderOutput.width, height: renderOutput.height })) };
   const record = await saveArtifact({ runId, stage: "release-record", role: "release-record", schemaVersion: "release-record/v1", inputHash: sha(recordContent), content: recordContent });
   await setRunStatus(runId, "completed", { stage: "release-record" });
   await evaluateCostReviewAlert(runId);
@@ -802,6 +859,9 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
   const lease = await claimStageLease({ runId, stage, inputHash, owner });
   if (!lease) return;
   const leaseHeartbeat = startStageLeaseHeartbeat({ runId, stage, leaseToken: lease.leaseToken, owner });
+  // Resolve and freeze the stage route at claim time so the checkpoint records
+  // exactly which provider/model served this attempt, independent of later env changes.
+  const modelRoute = stageRoute(stage);
   await setRunStatus(runId, "running", { stage });
   await appendRunEvent(runId, stage, "stage_started", `${stage} started.`, {});
   const stageStartedAt = Date.now();
@@ -817,7 +877,7 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     // this worker's output is stale and cannot advance the pipeline.
     await leaseHeartbeat.stop();
     const outputHash = result && typeof result === "object" && "sha256" in result && typeof result.sha256 === "string" ? result.sha256 : sha(result);
-    await checkpointStage({ runId, stage, inputHash, outputHash, outcome: "valid", leaseToken: lease.leaseToken, leaseOwner: owner, evidence: { stageInputHash: inputHash, leaseExpiresAt: lease.leaseExpiresAt.toISOString() } });
+    await checkpointStage({ runId, stage, inputHash, outputHash, outcome: "valid", leaseToken: lease.leaseToken, leaseOwner: owner, ...(modelRoute ? { modelRoute } : {}), evidence: { stageInputHash: inputHash, leaseExpiresAt: lease.leaseExpiresAt.toISOString() } });
     await appendRunEvent(runId, stage, "stage_completed", `${stage} completed.`, {});
     const next = nextStage(stage);
     if (next === "approval") {
@@ -844,10 +904,9 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
       await appendRunEvent(runId, stage, "status", `${stage} lease ownership was lost; this worker did not promote its result.`, { code: "STAGE_LEASE_LOST" });
       return;
     }
-    const route = routeForStage(stage);
-    if (route.provider !== "deterministic") await recordUsage(runId, stage, route.provider, route.model, stageStartedAt, { model: route.model }, `${stage}/v2`, { projection: "unknown-at-failure" }, "failed", error instanceof ProviderError ? error.code : "VALIDATION_OR_STAGE_ERROR");
-    if (error instanceof ProviderError && error.retryable) {
-      await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", evidence: { message, retryable: true, providerCode: error.code, attempt: lease.attemptCount } });
+    const route = modelRoute;
+    if (route && route.provider !== "deterministic") await recordUsage(runId, stage, route.provider, route.model, stageStartedAt, { model: route.model }, `${stage}/v2`, { projection: "unknown-at-failure" }, "failed", error instanceof ProviderError ? error.code : "VALIDATION_OR_STAGE_ERROR");    if (error instanceof ProviderError && error.retryable) {
+      await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", ...(modelRoute ? { modelRoute } : {}), evidence: { message, retryable: true, providerCode: error.code, attempt: lease.attemptCount } });
       await setRunStatus(runId, "queued", { stage });
       await appendRunEvent(runId, stage, "status", `${stage} will retry after a transient provider failure: ${message}`, { code: error.code, status: error.status ?? null });
       throw error;
@@ -855,14 +914,14 @@ export const processPipelineStage = async (runId: string, stage: StageName) => {
     const invalidArtifact = decideInvalidArtifactRetry({ attemptCount: lease.attemptCount, error });
     if (invalidArtifact.regenerate) {
       await recordInvalidArtifactAttempt({ runId, stage, inputHash, error, attempt: lease.attemptCount });
-      await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", evidence: { message, retryable: true, attempt: lease.attemptCount, validationError: message } });
+      await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", ...(modelRoute ? { modelRoute } : {}), evidence: { message, retryable: true, attempt: lease.attemptCount, validationError: message } });
       await setRunStatus(runId, "queued", { stage });
       await appendRunEvent(runId, stage, "status", `${stage} produced an invalid artifact and will regenerate.`, { attempt: lease.attemptCount, validationError: message });
       await scheduleStage(runId, stage, `validation-${invalidArtifact.nextAttempt}`);
       return;
     }
     if (isArtifactValidationFailure(error)) await recordInvalidArtifactAttempt({ runId, stage, inputHash, error, attempt: lease.attemptCount });
-    await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", evidence: { message, stageInputHash: inputHash } });
+    await checkpointStage({ runId, stage, inputHash, leaseToken: lease.leaseToken, leaseOwner: owner, outcome: "failed", ...(modelRoute ? { modelRoute } : {}), evidence: { message, stageInputHash: inputHash } });
     await setRunStatus(runId, "failed", { stage, failureCode: "STAGE_FAILED", failureMessage: message });
     await appendRunEvent(runId, stage, "stage_failed", `${stage} failed: ${message}`, {});
     // Terminal validation and configuration failures are persisted outcomes. They

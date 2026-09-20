@@ -1,0 +1,1 @@
+ALTER TABLE "stage_checkpoints" ADD COLUMN "model_route" jsonb;

@@ -1,3 +1,4 @@
+import type { ModelRoute } from "@upcraft/contracts";
 import { asProviderError } from "./errors.ts";
 import type { ProviderResult } from "./usage.ts";
 
@@ -15,8 +16,8 @@ const generate = async (model: string, body: Record<string, unknown>) => {
   return await response.json() as { responseId?: string; candidates?: Array<{ content?: { parts?: Array<{ text?: string; inlineData?: { data?: string; mimeType?: string } }> } }>; usageMetadata?: { promptTokenCount?: number; cachedContentTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number } };
 };
 
-export const verifyClaims = async (prompt: string): Promise<ProviderResult<Record<string, unknown>>> => {
-  const model = process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash";
+export const verifyClaims = async (route: ModelRoute, prompt: string): Promise<ProviderResult<Record<string, unknown>>> => {
+  const model = route.model;
   const result = await generate(model, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: "application/json" },
@@ -38,8 +39,8 @@ export const verifyClaims = async (prompt: string): Promise<ProviderResult<Recor
   };
 };
 
-export const generateIllustration = async (prompt: string) => {
-  const model = process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-image";
+export const generateIllustration = async (route: ModelRoute, prompt: string) => {
+  const model = route.model;
   const result = await generate(model, {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
