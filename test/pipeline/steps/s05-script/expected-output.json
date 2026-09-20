@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "approved-script/v2",
+  "checks": [
+    { "path": "narration", "assert": "array-min", "value": 1 },
+    { "path": "narration[].id", "assert": "uuid" },
+    { "path": "narration[].sceneId", "assert": "uuid" },
+    { "path": "narration[].text", "assert": "non-empty-string" },
+    { "path": "narration[].claimIds", "assert": "array" },
+    { "path": "narration[].visualAction", "assert": "non-empty-string" },
+    { "path": "narration[].pauseMs", "assert": "number" }
+  ]
+}

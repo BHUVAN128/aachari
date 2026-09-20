@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "render-output/v1",
+  "checks": [
+    {
+      "path": "objectKey",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "sha256",
+      "assert": "string"
+    }
+  ]
+}

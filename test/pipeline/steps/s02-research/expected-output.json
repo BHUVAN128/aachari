@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "fact-pack/v2",
+  "checks": [
+    { "path": "claims", "assert": "array-min", "value": 1 },
+    { "path": "claims[].id", "assert": "uuid" },
+    { "path": "claims[].text", "assert": "non-empty-string" },
+    { "path": "claims[].critical", "assert": "boolean" },
+    { "path": "claims[].evidence.sourceId", "assert": "uuid" },
+    { "path": "claims[].evidence.sourceHash", "assert": "string" },
+    { "path": "claims[].evidence.segmentIds", "assert": "array-min", "value": 1 },
+    { "path": "claims[].evidence.locator", "assert": "non-empty-string" },
+    { "path": "caveats", "assert": "array" }
+  ]
+}

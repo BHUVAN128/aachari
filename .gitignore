@@ -18,6 +18,12 @@ coverage/
 playwright-report/
 test-results/
 
+# Step harness generated output (logs, frozen artifacts, local renders)
+test/pipeline/logs/
+test/pipeline/artifacts/
+test/pipeline/.render-output/
+test/pipeline/.work/
+
 # OS and editor files
 .DS_Store
 .idea/

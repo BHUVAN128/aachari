@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "voiceover/v1",
+  "checks": [
+    { "path": "assetId", "assert": "uuid" },
+    { "path": "objectKey", "assert": "non-empty-string" },
+    { "path": "words", "assert": "array-min", "value": 1 },
+    { "path": "words[].text", "assert": "non-empty-string" },
+    { "path": "words[].startMs", "assert": "number" },
+    { "path": "words[].endMs", "assert": "number" }
+  ]
+}

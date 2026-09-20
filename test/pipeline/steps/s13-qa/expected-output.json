@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "qa-report/v1",
+  "checks": [
+    {
+      "path": "passed",
+      "assert": "boolean"
+    },
+    {
+      "path": "tiers",
+      "assert": "array-min",
+      "value": 2
+    }
+  ]
+}

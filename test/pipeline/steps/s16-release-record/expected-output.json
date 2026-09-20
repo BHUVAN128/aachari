@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "release-record/v1",
+  "checks": [
+    {
+      "path": "releasedAt",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "run",
+      "assert": "exists"
+    },
+    {
+      "path": "artifacts",
+      "assert": "array"
+    }
+  ]
+}

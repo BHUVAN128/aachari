@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "resolved-layout/v1",
+  "checks": [
+    {
+      "path": "canvas",
+      "assert": "exists"
+    },
+    {
+      "path": "layouts",
+      "assert": "array-min",
+      "value": 1
+    }
+  ]
+}

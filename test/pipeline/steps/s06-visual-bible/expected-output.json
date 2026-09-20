@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "visual-bible/v1",
+  "checks": [
+    {
+      "path": "canvasTexture",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "palette",
+      "assert": "array-min",
+      "value": 2
+    },
+    {
+      "path": "typography.heading",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "captionSafeArea.top",
+      "assert": "number"
+    }
+  ]
+}

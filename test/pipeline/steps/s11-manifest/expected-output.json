@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "video-manifest/v1",
+  "checks": [
+    {
+      "path": "fps",
+      "assert": "number"
+    },
+    {
+      "path": "words",
+      "assert": "array-min",
+      "value": 1
+    },
+    {
+      "path": "captions",
+      "assert": "array-min",
+      "value": 1
+    },
+    {
+      "path": "scenes",
+      "assert": "array-min",
+      "value": 1
+    }
+  ]
+}

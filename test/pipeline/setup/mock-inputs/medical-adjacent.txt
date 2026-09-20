@@ -1,0 +1,13 @@
+Clinical reference note: pharmacology of beta-adrenergic blockade (educational use only)
+
+This note is provided as an educational reference for a medical-school audience. It is not diagnostic guidance and must not be used to direct patient care.
+
+Beta-adrenergic blockers, commonly called beta-blockers, are a class of medicines that bind beta-adrenergic receptors and reduce the effects of catecholamines such as adrenaline and noradrenaline. They are used in conditions including hypertension, angina, heart failure, and certain arrhythmias.
+
+Beta receptors are divided into beta-1 receptors, found mainly in the heart and kidney, and beta-2 receptors, found mainly in the lungs, blood vessels, and skeletal muscle. Beta-1 stimulation increases heart rate and contractility, while beta-2 stimulation relaxes bronchial smooth muscle.
+
+Because beta-2 receptors relax the airways, non-selective beta-blockers can cause bronchospasm and are generally avoided in people with asthma. Cardioselective agents preferentially block beta-1 receptors and are less likely to provoke bronchospasm, but selectivity is dose-dependent and can be lost at higher doses.
+
+Adverse effects can include bradycardia, hypotension, fatigue, cold extremities, and masking of hypoglycemia symptoms in people with diabetes. Beta-blockers should not be stopped abruptly, because sudden withdrawal can cause rebound tachycardia, hypertension, or angina.
+
+Dosing, contraindications, and monitoring must be determined by a qualified clinician using current clinical sources. This educational text deliberately omits specific doses and does not recommend treatment for any individual.

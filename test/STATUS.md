@@ -1,0 +1,52 @@
+# Step Harness — Status Tracker
+
+Check a box **only** when the step's `logs/<runId>/<step>.ndjson` shows the
+expected outcome sequence from a real, unblocked run, and its `test.ts` passes.
+
+## Pipeline steps
+
+| # | Step | Assertions | Live run |
+| --- | --- | --- | --- |
+| s01 | preflight | capability report emitted; missing credentials fail visibly | [ ] |
+| s02 | research | lossless evidence map; fact-pack schema/contract; claims cite locked segments | [x] |
+| s03 | fact-verification | verifier rejects once then accepts (WF2); exhaustion fails visibly | [ ] |
+| s04 | blueprint | blueprint schema; objective coverage; critical-claim coverage | [ ] |
+| s05 | script | script schema; verifier loop; `pauseMs` pacing present | [ ] |
+| s06 | visual-bible | visual-bible schema; safe-area fractions | [ ] |
+| s07 | assets | typed diagram models; PNG-only illustration gate; omission fallback | [ ] |
+| s08 | voiceover | measured duration ≥ speech + pauses; loudness/pronunciation gates | [ ] |
+| s09 | captions | caption cues reconstruct locked word alignment | [ ] |
+| s10 | spatial-layout | solver assertions; drift ≤ 0.75px; no caption overlap | [ ] |
+| s11 | manifest | manifest schema; voice alignment matches script lines | [ ] |
+| s12 | preview-render | render-integrity probe from produced bytes | [ ] |
+| s13 | qa | Tier A deterministic + exactly one Tier B call; convergence | [ ] |
+| s14 | approval | automatic standard school/college path; illustration forces review | [ ] |
+| s15 | final-render | final master + SRT + variants; export profile | [ ] |
+| s16 | release-record | required release fields; completed status | [ ] |
+
+Current green frontier: **s02**. s02's Gap-3 module is test-local and is promoted
+to `packages/pipeline` at Phase 6.
+
+## Gap fixes
+
+| Gap | Where it lives now | Promoted to | Deterministic tests | Promoted |
+| --- | --- | --- | --- | --- |
+| Gap 3 semantic segmentation | `steps/s02-research/segmentation.ts` | `packages/pipeline/src/context.ts` | [x] | [ ] |
+| Gap 1 verifier-rejection loop | `steps/s03-fact-verification/verifier-loop.ts`, `steps/s05-script/script-verification.ts` | `packages/pipeline/src/verification.ts` + s03/s05 | [x] | [ ] |
+| Gap 4 transport hardening | `steps/s02-research/transport-hardening.ts` | `packages/providers/src/errors.ts`, `openai.ts`, `gemini.ts`, `elevenlabs.ts` | [x] | [ ] |
+| Gap 2 visual pacing | `steps/s05-script/pacing.ts`, `steps/s08-voiceover/line-synthesis.ts` | `prompts/script.ts`, `providers/elevenlabs.ts`, `contracts` | [x] | [ ] |
+
+## Workflows
+
+| Workflow | Scenario | Deterministic path | Live path |
+| --- | --- | --- | --- |
+| WF1 standard school | photosynthesis → 16 stages → completed release record | n/a | [ ] |
+| WF2 verifier rejection | one claim rejected then accepted; exhaustion variant | [x] | [ ] |
+| WF3 transport recovery | truncation retry; hang fallback; crash-before-checkpoint resume | [x] | [ ] |
+
+## Promotion gate (Phase 6)
+- [ ] all step boxes ticked
+- [ ] gap modules ported to `packages/`
+- [ ] `packages/*/test` regression suites pass
+- [ ] governing-doc updates committed in the same change
+- [ ] harness retained under `test/` as the sandbox

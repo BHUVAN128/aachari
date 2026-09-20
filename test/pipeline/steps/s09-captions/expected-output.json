@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "caption-timings/v1",
+  "checks": [
+    {
+      "path": "words",
+      "assert": "array-min",
+      "value": 1
+    },
+    {
+      "path": "cues",
+      "assert": "array-min",
+      "value": 1
+    },
+    {
+      "path": "cues[].text",
+      "assert": "non-empty-string"
+    }
+  ]
+}

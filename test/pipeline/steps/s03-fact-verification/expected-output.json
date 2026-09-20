@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "claim-verification/v2",
+  "checks": [
+    { "path": "evidence", "assert": "array-min", "value": 1 },
+    { "path": "evidence[].claimId", "assert": "uuid" },
+    { "path": "evidence[].sourceId", "assert": "uuid" },
+    { "path": "evidence[].segmentIds", "assert": "array-min", "value": 1 },
+    { "path": "evidence[].supported", "assert": "boolean" },
+    { "path": "evidence[].rationale", "assert": "non-empty-string" },
+    { "path": "notes", "assert": "array" }
+  ]
+}

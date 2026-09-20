@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "capability-report/v1",
+  "checks": [
+    {
+      "path": "domain",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "renderer",
+      "assert": "non-empty-string"
+    }
+  ]
+}

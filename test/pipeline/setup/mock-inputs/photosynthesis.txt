@@ -1,0 +1,21 @@
+Photosynthesis: How Plants Make Food
+
+Photosynthesis is the process by which green plants, algae, and some bacteria convert light energy into chemical energy stored in glucose. It is the foundation of almost every food chain on Earth.
+
+The overall balanced chemical equation for photosynthesis is:
+6 CO2 + 6 H2O + light energy -> C6H12O6 + 6 O2.
+This equation states that six molecules of carbon dioxide and six molecules of water, in the presence of light energy, produce one molecule of glucose and six molecules of oxygen.
+
+In plants, photosynthesis takes place mainly in the leaves, inside organelles called chloroplasts. Chloroplasts contain the green pigment chlorophyll, which absorbs light most strongly in the blue and red parts of the visible spectrum and reflects green light. This reflected green light is why leaves appear green to us.
+
+Photosynthesis happens in two connected stages. The first stage is the light-dependent reaction, which occurs in the thylakoid membranes of the chloroplast. In this stage, light energy is absorbed by chlorophyll and used to split water molecules in a process called photolysis. Splitting water releases oxygen gas as a by-product and produces energy-carrying molecules, ATP and NADPH.
+
+The second stage is the light-independent reaction, also called the Calvin cycle. The Calvin cycle takes place in the stroma, the fluid space surrounding the thylakoids. It uses the ATP and NADPH made in the light-dependent reaction, together with carbon dioxide from the air, to build glucose. Because the Calvin cycle does not need light directly, it is sometimes called the dark reaction, although it normally continues while light is available.
+
+Carbon dioxide enters the leaf through tiny pores called stomata, which are found mostly on the underside of leaves. Oxygen produced during photolysis exits through the same stomata. Water is absorbed from the soil by the roots and carried to the leaves through the xylem.
+
+The rate of photosynthesis is affected by several factors. Light intensity increases the rate up to a point, after which another factor becomes limiting. Carbon dioxide concentration has a similar limiting effect. Temperature also matters: the enzymes of the Calvin cycle work fastest at an optimum temperature, and the rate falls if it becomes too cold or too hot because enzymes denature.
+
+Photosynthesis matters because it produces the oxygen we breathe and the glucose that feeds nearly all life. It also removes carbon dioxide from the atmosphere, which links it to the global carbon cycle and to the climate.
+
+A simple summary: plants capture light with chlorophyll, split water to release oxygen, and use ATP and NADPH to fix carbon dioxide into glucose during the Calvin cycle.

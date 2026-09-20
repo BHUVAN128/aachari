@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "selected-assets/v1",
+  "checks": [
+    {
+      "path": "composition",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "assetIds",
+      "assert": "array"
+    },
+    {
+      "path": "diagramModels",
+      "assert": "array"
+    },
+    {
+      "path": "illustrationDecisions",
+      "assert": "array"
+    }
+  ]
+}

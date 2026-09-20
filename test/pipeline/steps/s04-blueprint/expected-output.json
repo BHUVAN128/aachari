@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "lesson-blueprint/v2",
+  "checks": [
+    {
+      "path": "objective",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "hook",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "recap",
+      "assert": "non-empty-string"
+    },
+    {
+      "path": "scenes",
+      "assert": "array-min",
+      "value": 1
+    },
+    {
+      "path": "scenes[].id",
+      "assert": "uuid"
+    },
+    {
+      "path": "scenes[].claimIds",
+      "assert": "array-min",
+      "value": 1
+    }
+  ]
+}
