@@ -60,6 +60,7 @@ import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from
 import { assertClaimVerificationComplete, assertScriptVerificationComplete } from "./verification.ts";
 import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buildScenePlans, buildSoundPlan } from "./planning.ts";
 import { validateBlueprint } from "./blueprint-qa.ts";
+import { solveSceneLayout } from "./spatial.ts";
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { curatedDomainTerms, imageDimensions, validateIllustrationCandidate, validateLoudness, validatePronunciation, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { validateClientStyleApproval } from "./domain-qa.ts";
@@ -470,19 +471,53 @@ const runCaptions = async (runId: string) => {
   return saveArtifact({ runId, stage: "captions", role: "caption-timings", schemaVersion: "caption-timings/v1", inputHash: sha(voiceover), content: { words, cues } });
 };
 
+const ANCHOR_PROVIDERS = new Set(["svg", "mask", "landmark", "detection", "review"]);
+
+/**
+ * Stage 7 (M7): solve each scene's `resolved-layout/v1` from measured anchors.
+ * The base diagram is placed at its computed area and any selected illustration
+ * is attached to a measured diagram anchor with the deterministic solver, which
+ * then asserts anchor drift; no model supplies pixels.
+ */
 const runSpatialLayout = async (runId: string) => {
-  const script = ApprovedScriptSchema.parse(requireContent(await getArtifact(runId, "approved-script"), "approved-script"));
-  const run = await getRun(runId);
+  const [run, scriptArtifact, selectedArtifact, assets] = await Promise.all([
+    getRun(runId),
+    getArtifact(runId, "approved-script"),
+    getArtifact(runId, "selected-assets"),
+    getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
+  ]);
   if (!run) throw new Error("Run not found");
+  const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
+  const selected = selectedArtifact?.content as { illustrationDecisions?: Array<{ sceneId: string; choice: string; assetId?: string }> } | undefined;
   const canvas = run.snapshot.aspectRatio === "9:16" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
+  const area = sceneDiagramArea(canvas);
   const sceneIds = [...new Set(script.narration.map((line) => line.sceneId))];
-  const layouts = sceneIds.map((sceneId) => ResolvedLayoutSchema.parse({
-    schemaVersion: "resolved-layout/v1",
-    sceneId,
-    canvas,
-    layers: [{ id: "diagram-" + sceneId, matrix: [1, 0, 0, 1, 0, 0], bounds: { x: Math.round(canvas.width * .12), y: Math.round(canvas.height * .28), width: Math.round(canvas.width * .76), height: Math.round(canvas.height * .48) }, zIndex: 1 }],
-  }));
-  return saveArtifact({ runId, stage: "spatial-layout", role: "resolved-layout", schemaVersion: "resolved-layout/v1", inputHash: sha(script), content: { schemaVersion: "resolved-layout/v1", canvas, layouts } });
+  const anchorRows = assets.length
+    ? await getDb().select().from(assetAnchors).where(inArray(assetAnchors.assetId, assets.map((asset) => asset.id))).orderBy(asc(assetAnchors.name))
+    : [];
+
+  const layouts = sceneIds.map((sceneId) => {
+    const diagramAsset = assets.find((asset) => asset.sceneId === sceneId && asset.role === "diagram-" + sceneId);
+    if (!diagramAsset) throw new Error("Spatial layout requires a selected diagram asset for scene " + sceneId);
+    const anchors = anchorRows.filter((row) => row.assetId === diagramAsset.id && ANCHOR_PROVIDERS.has(row.provider)).map((row) => ({
+      name: row.name,
+      point: { x: row.x / 1_000_000, y: row.y / 1_000_000 },
+      provider: row.provider as "svg" | "mask" | "landmark" | "detection" | "review",
+    }));
+    const decision = selected?.illustrationDecisions?.find((entry) => entry.sceneId === sceneId && entry.choice === "selected" && entry.assetId);
+    const illustrationAsset = decision?.assetId ? assets.find((asset) => asset.id === decision.assetId) : undefined;
+    const targetAnchor = anchors.find((anchor) => anchor.name.endsWith(":center"))?.name;
+    const illustration = illustrationAsset?.width && illustrationAsset.height && targetAnchor
+      ? { assetId: illustrationAsset.id, width: illustrationAsset.width, height: illustrationAsset.height, targetAnchor, zIndex: 0 }
+      : undefined;
+    return solveSceneLayout({
+      sceneId,
+      canvas,
+      diagram: { assetId: diagramAsset.id, width: canvas.width, height: canvas.height, bounds: area, anchors, zIndex: 1 },
+      ...(illustration ? { illustration } : {}),
+    });
+  });
+  return saveArtifact({ runId, stage: "spatial-layout", role: "resolved-layout", schemaVersion: "resolved-layout/v1", inputHash: sha([script, selectedArtifact?.sha256 ?? null]), content: { schemaVersion: "resolved-layout/v1", canvas, layouts } });
 };
 
 const runManifest = async (runId: string) => {
@@ -521,11 +556,13 @@ const runManifest = async (runId: string) => {
     const blueprintScene = blueprint.scenes.find((scene) => scene.id === sceneId);
     const asset = assets.find((candidate) => candidate.sceneId === sceneId && candidate.role === "diagram-" + sceneId);
     if (!layout || !blueprintScene || !asset) throw new Error("Manifest scene " + sceneId + " is missing layout, blueprint, or selected asset");
-    const illustration = assets.find((candidate) => candidate.sceneId === sceneId && candidate.role === "illustration-" + sceneId);
-    const layers = [
-      ...(illustration ? [{ id: "illustration-" + sceneId, kind: "illustration" as const, assetId: illustration.id, zIndex: 0, bounds: { x: 0, y: 0, width: layoutBundle.canvas.width, height: layoutBundle.canvas.height } }] : []),
-      ...layout.layers.map((layer) => ({ id: layer.id, kind: "diagram" as const, assetId: asset.id, zIndex: layer.zIndex, bounds: layer.bounds })),
-    ];
+    const layers = layout.layers.map((layer) => ({
+      id: layer.id,
+      kind: layer.id.startsWith("illustration-") ? ("illustration" as const) : ("diagram" as const),
+      assetId: layer.assetId ?? asset.id,
+      zIndex: layer.zIndex,
+      bounds: layer.bounds,
+    }));
     return { sceneId, layoutArtifactId: layoutArtifact.id, startMs: timing.startMs, endMs: timing.endMs, title: blueprintScene.purpose, visualBeat: timing.visualBeat, layers };
   });
   const manifest = ProjectManifestSchema.parse({ schemaVersion: "video-manifest/v1", fps: 30, canvas: layoutBundle.canvas, safeArea, narrationAssetId: voiceover.assetId, words: captions.words, captions: captions.cues, scenes });

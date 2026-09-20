@@ -338,6 +338,8 @@ export type DiagramAnchorPoint = z.infer<typeof DiagramAnchorSchema>;
 
 export const ResolvedLayerSchema = z.object({
   id: z.string().min(1),
+  /** Selected media asset this layer paints; the solver never invents pixels. */
+  assetId: z.string().uuid().optional(),
   matrix: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]),
   bounds: z.object({ x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive() }),
   zIndex: z.number().int(),

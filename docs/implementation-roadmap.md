@@ -38,9 +38,12 @@ the specified regression evidence are present.
   `viewer-outcome/v1` contract, and authenticated outcomes API record retention,
   scene drops, rewatches, quiz results, and teacher/reviewer feedback against
   the immutable run; the accepted-video cost baseline exposes nearest-rank p75
-  and the 125%-of-p75 review threshold with tests. Remaining: wiring the spatial
-  solver into layout/composition and feeding outcomes back into the regression
-  set automatically.
+  and the 125%-of-p75 review threshold with tests. The spatial solver is wired
+  into `runSpatialLayout`: it loads measured `asset_anchors` plus the locked
+  scene plans and solves each scene's multi-layer `resolved-layout/v1`, attaching
+  an optional illustration to a measured diagram anchor with
+  `solveAttachment`/`assertAttachment`; `runManifest` consumes the solver layers.
+  Remaining: feeding outcomes back into the regression set automatically.
 - [x] Phase 5 — domain policy gates: engineering lessons must state units,
   assumptions, and calculation steps; medical lessons must cite at least one
   authoritative clinical source (clinician approval remains the release
@@ -53,7 +56,7 @@ the specified regression evidence are present.
   dimensions), and any selected AI illustration forces human approval instead of
   automatic school/college publication. A `sound-plan/v1` artifact exists but is
   deferred/not a release gate, as is multi-candidate illustration evaluation.
-  Remaining: reviewer style/text scoring and solver-based placement.
+  Remaining: reviewer style/text scoring.
 - [~] Phase 4 — measured media gates: caption wording/line/safe-area/contrast
   validation, audio-duration-vs-alignment checks on the narration MP3, render
   integrity measured from the produced MP4 (dimensions, duration, fps, frame
@@ -100,9 +103,9 @@ the specified regression evidence are present.
    implemented; loudness/pronunciation gates are implemented; multi-format
    renders remain.
 6. [x] Add engineering, medical-source-quality, and client rights/style gates.
-7. [~] Wire the spatial solver into layout/composition, then add feedback
-   ingestion and the accepted-video cost-baseline workflow. Feedback ingestion
-   and the cost baseline are implemented; solver-based layout remains.
+7. [x] Wire the spatial solver into layout/composition, then add feedback
+   ingestion and the accepted-video cost-baseline workflow. Feedback ingestion,
+   the cost baseline, and solver-based layout are implemented.
 
 ## Completion definition
 

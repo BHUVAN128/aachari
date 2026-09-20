@@ -1,4 +1,4 @@
-import { ResolvedLayoutSchema, type AssetAnchor, type Point, type ResolvedLayer } from "@upcraft/contracts";
+import { ResolvedLayoutSchema, type AssetAnchor, type Point, type ResolvedLayer, type ResolvedLayout } from "@upcraft/contracts";
 
 export type Canvas = { width: number; height: number };
 export type MeasuredAsset = {
@@ -97,4 +97,75 @@ export const normalizedPoint = (x: number, y: number, width: number, height: num
   const point = { x: x / width, y: y / height };
   if (point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) throw new Error("Anchor lies outside its source asset.");
   return point;
+};
+
+export type Bounds = { x: number; y: number; width: number; height: number };
+
+/**
+ * A scene's measured diagram: its selected asset identity, intrinsic size, the
+ * resolved placement of that asset, and the measured anchor points persisted
+ * from deterministic SVG geometry.
+ */
+export type MeasuredDiagram = {
+  assetId: string;
+  width: number;
+  height: number;
+  bounds: Bounds;
+  anchors: AssetAnchor[];
+  zIndex: number;
+};
+
+/**
+ * Solves one scene's `resolved-layout/v1` from measured anchors. The base
+ * diagram is placed at its computed area; an optional illustration overlay is
+ * attached to a measured diagram anchor with `solveAttachment` and re-checked by
+ * `assertAttachment`, so the overlay transform is never guessed or supplied by a
+ * model. Layers are emitted sorted by z-index.
+ */
+export const solveSceneLayout = (params: {
+  sceneId: string;
+  canvas: Canvas;
+  diagram: MeasuredDiagram;
+  illustration?: { assetId: string; width: number; height: number; targetAnchor: string; zIndex: number; coverage?: number };
+}): ResolvedLayout => {
+  const { sceneId, canvas, diagram } = params;
+  const base: ResolvedLayer = {
+    id: `diagram-${sceneId}`,
+    assetId: diagram.assetId,
+    matrix: [1, 0, 0, 1, diagram.bounds.x, diagram.bounds.y],
+    bounds: diagram.bounds,
+    zIndex: diagram.zIndex,
+  };
+  if (!params.illustration) {
+    return ResolvedLayoutSchema.parse({ schemaVersion: "resolved-layout/v1", sceneId, canvas, layers: [base] });
+  }
+
+  const { illustration } = params;
+  const subject: MeasuredAsset = {
+    id: illustration.assetId,
+    width: illustration.width,
+    height: illustration.height,
+    anchors: [{ name: "center", point: { x: 0.5, y: 0.5 }, provider: "detection", confidence: 1 }],
+  };
+  const target: MeasuredAsset = { id: diagram.assetId, width: diagram.width, height: diagram.height, anchors: diagram.anchors };
+  const coverage = illustration.coverage ?? 0.28;
+  const scale = Math.min(1.5, (canvas.width * coverage) / illustration.width, (canvas.height * coverage) / illustration.height);
+  const constraint: AttachConstraint = {
+    subjectId: illustration.assetId,
+    subjectAnchor: "center",
+    targetId: diagram.assetId,
+    targetAnchor: illustration.targetAnchor,
+    scale,
+    zIndex: illustration.zIndex,
+    relation: "attach",
+  };
+  const overlay = solveAttachment(canvas, subject, target, constraint);
+  assertAttachment(subject, target, overlay, constraint);
+  const overlayLayer: ResolvedLayer = { ...overlay, id: `illustration-${sceneId}`, assetId: illustration.assetId };
+  return ResolvedLayoutSchema.parse({
+    schemaVersion: "resolved-layout/v1",
+    sceneId,
+    canvas,
+    layers: [overlayLayer, base].sort((a, b) => a.zIndex - b.zIndex),
+  });
 };

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assertAttachment, solveAttachment } from "../src/spatial.ts";
+import { assertAttachment, solveAttachment, solveSceneLayout } from "../src/spatial.ts";
+
+const sceneId = "22222222-2222-4222-8222-222222222222";
+const diagramAssetId = "33333333-3333-4333-8333-333333333333";
+const illustrationAssetId = "44444444-4444-4444-8444-444444444444";
 
 describe("solveAttachment", () => {
   it("locks an overlay anchor to its measured target anchor instead of guessing x/y", () => {
@@ -10,6 +14,43 @@ describe("solveAttachment", () => {
 
     expect(layer.bounds).toMatchObject({ x: 300, y: 314, width: 400, height: 192 });
     expect(() => assertAttachment(beam, face, layer, constraint)).not.toThrow();
+  });
+
+  it("solves a multi-layer scene layout from measured anchors and asserts drift", () => {
+    const layout = solveSceneLayout({
+      sceneId,
+      canvas: { width: 1920, height: 1080 },
+      diagram: {
+        assetId: diagramAssetId, width: 1920, height: 1080, bounds: { x: 230, y: 302, width: 1459, height: 518 }, zIndex: 1,
+        anchors: [{ name: "concept:center", point: { x: 0.5, y: 0.5865 }, provider: "svg" }],
+      },
+      illustration: { assetId: illustrationAssetId, width: 1024, height: 1024, targetAnchor: "concept:center", zIndex: 0 },
+    });
+    expect(layout.layers.map((layer) => layer.id)).toEqual([`illustration-${sceneId}`, `diagram-${sceneId}`]);
+    expect(layout.layers[0]!.assetId).toBe(illustrationAssetId);
+    const overlay = layout.layers[0]!;
+    expect(Math.abs(overlay.bounds.x + overlay.bounds.width / 2 - 0.5 * 1920)).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(overlay.bounds.y + overlay.bounds.height / 2 - 0.5865 * 1080)).toBeLessThanOrEqual(0.75);
+    expect(overlay.bounds.x).toBeGreaterThanOrEqual(0);
+    expect(overlay.bounds.x + overlay.bounds.width).toBeLessThanOrEqual(1920);
+  });
+
+  it("never emits an illustration layer when the scene has none", () => {
+    const layout = solveSceneLayout({
+      sceneId,
+      canvas: { width: 1920, height: 1080 },
+      diagram: { assetId: diagramAssetId, width: 1920, height: 1080, bounds: { x: 230, y: 302, width: 1459, height: 518 }, anchors: [], zIndex: 1 },
+    });
+    expect(layout.layers.map((layer) => layer.id)).toEqual([`diagram-${sceneId}`]);
+  });
+
+  it("rejects an illustration attached to an anchor the diagram never measured", () => {
+    expect(() => solveSceneLayout({
+      sceneId,
+      canvas: { width: 1920, height: 1080 },
+      diagram: { assetId: diagramAssetId, width: 1920, height: 1080, bounds: { x: 230, y: 302, width: 1459, height: 518 }, anchors: [], zIndex: 1 },
+      illustration: { assetId: illustrationAssetId, width: 1024, height: 1024, targetAnchor: "system:center", zIndex: 0 },
+    })).toThrow("measured anchor");
   });
 
   it("rejects an unmasked behind-mask overlay", () => {
