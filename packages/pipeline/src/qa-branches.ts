@@ -6,7 +6,7 @@ import {
 } from "./diagram-qa.ts";
 import { validateCaptionLayout, validateRenderIntegrity, validateVoiceAlignment, type MediaIssue } from "./media-qa.ts";
 import {
-  pedagogyReviewIssues,
+  consolidatedReviewIssues,
   validateClientAssetRights,
   validateEngineeringContent,
   validateMedicalSources,
@@ -14,30 +14,36 @@ import {
 import type {
   ApprovedScript,
   CaptionCue,
+  ConsolidatedReview,
   DiagramModel,
   Domain,
   FactPack,
-  PedagogyReview,
+  ResolvedLayout,
   WordTiming,
 } from "@upcraft/contracts";
 import type { DiagramArea, DiagramCanvas, MediaProbe } from "@upcraft/compositor";
 
 /**
- * Independent QA branches from section 9 of `docs/video-generation-process.md`.
+ * Tiered release QA from section 11 of `docs/video-generation-process.md`.
  *
- * The preview render and its locked manifest are the only inputs, so the
- * branches may run concurrently (required parallelism table). Each branch is
- * pure and dependency-injected so the regression suite can prove its decisions
- * without a live queue, database, or provider. A validator never re-uses the
- * generator's own verdict: the visual branch recomputes diagram geometry and
- * vocabulary from locked evidence, and the audio/render branch re-probes the
- * produced bytes instead of trusting the pre-render request.
+ * Tier A is deterministic and costs zero tokens: schema, artifact-completeness,
+ * caption reconstruction, spatial-solve verification, and render-integrity
+ * probes. Tier B is exactly one consolidated model review on a separately
+ * routed verifier; deep per-domain model QA branches are deferred until Tier B
+ * findings show they are needed. Tier C (human approval) is unchanged.
+ *
+ * Every check is pure and dependency-injected so the regression suite can prove
+ * its decisions without a live queue, database, or provider. A validator never
+ * re-uses the generator's own verdict: the visual check recomputes diagram
+ * geometry and vocabulary from locked evidence, and the audio/render check
+ * re-probes the produced bytes instead of trusting the pre-render request.
  */
-export type QaBranchName = "structural" | "pedagogy" | "visual" | "audio-render";
-export const QA_BRANCHES: readonly QaBranchName[] = ["structural", "pedagogy", "visual", "audio-render"];
-
 export type QaIssue = MediaIssue;
-export type QaBranchResult = { branch: QaBranchName; issues: QaIssue[]; checks: string[] };
+export type QaCheckResult = { checks: string[]; issues: QaIssue[] };
+
+export const QA_TIERS = ["A", "B"] as const;
+export type QaTierName = (typeof QA_TIERS)[number];
+export type QaTierResult = { tier: QaTierName; checks: string[]; issues: QaIssue[] };
 
 const domainPolicyIssues = (input: StructuralQaInput["domainPolicy"]): QaIssue[] => {
   if (!input) return [];
@@ -71,10 +77,10 @@ export type StructuralQaInput = {
 
 /**
  * Deterministic schema, artifact-completeness, caption-index, scene-asset, and
- * domain-policy validation. No model is involved, so this branch can never be
+ * domain-policy validation. No model is involved, so this check can never be
  * satisfied by the generator's own claim that its output is valid.
  */
-export const structuralQa = (input: StructuralQaInput): QaBranchResult => {
+export const structuralQa = (input: StructuralQaInput): QaCheckResult => {
   const issues: QaIssue[] = [];
   const { captions } = input;
 
@@ -90,7 +96,7 @@ export const structuralQa = (input: StructuralQaInput): QaBranchResult => {
     issues.push({ rule: "scene-asset-completeness", evidence: { scenes: input.sceneCount, scriptScenes: input.scriptSceneCount, assets: input.assetIds.length }, remediation: "Produce and attach one validated selected asset for every narrated scene." });
   }
   issues.push(...domainPolicyIssues(input.domainPolicy));
-  return { branch: "structural", issues, checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "scene-asset-completeness", "preview-render-present", "domain-policy"] };
+  return { checks: ["schema", "artifact-completeness", "caption-monotonicity", "caption-index-integrity", "scene-asset-completeness", "preview-render-present", "domain-policy"], issues };
 };
 
 export type VisualQaInput = {
@@ -111,7 +117,7 @@ export type VisualQaInput = {
  * recomputed from locked artifacts. Diagram geometry and label vocabulary are
  * re-derived by re-rendering the typed model, independent of the asset stage.
  */
-export const visualQa = (input: VisualQaInput): QaBranchResult => {
+export const visualQa = (input: VisualQaInput): QaCheckResult => {
   const issues: QaIssue[] = [
     ...validateCaptionLayout({ canvas: input.canvas, safeArea: input.safeArea, captions: input.captions, words: input.words }),
   ];
@@ -120,7 +126,7 @@ export const visualQa = (input: VisualQaInput): QaBranchResult => {
     const { layout } = renderDiagramSvg(model, input.palette, input.canvas, input.area);
     issues.push(...validateDiagramLayout({ model, layout }).map((issue) => ({ ...issue, evidence: { sceneId: model.sceneId, ...issue.evidence } })));
   }
-  return { branch: "visual", issues, checks: ["caption-layout", "diagram-label-vocabulary", "diagram-geometry", "diagram-contrast"] };
+  return { checks: ["caption-layout", "diagram-label-vocabulary", "diagram-geometry", "diagram-contrast"], issues };
 };
 
 export type AudioRenderQaInput = {
@@ -132,8 +138,8 @@ export type AudioRenderQaInput = {
 };
 
 /** Audio duration/alignment plus render-integrity measured from the produced file. */
-export const audioRenderQa = (input: AudioRenderQaInput): QaBranchResult => ({
-  branch: "audio-render",
+export const audioRenderQa = (input: AudioRenderQaInput): QaCheckResult => ({
+  checks: ["voice-alignment", "render-integrity"],
   issues: [
     ...validateVoiceAlignment({ words: input.words, measuredDurationMs: input.narrationDurationMs }),
     ...validateRenderIntegrity({
@@ -146,31 +152,81 @@ export const audioRenderQa = (input: AudioRenderQaInput): QaBranchResult => ({
       requiredVideoCodec: input.expected.codec,
     }),
   ],
-  checks: ["voice-alignment", "render-integrity"],
 });
 
-/** Reducer over the separately routed pedagogy review; no self-validation. */
-export const pedagogyQa = (review: PedagogyReview): QaBranchResult => ({
-  branch: "pedagogy",
-  issues: pedagogyReviewIssues(review).map((issue) => ({ rule: issue.rule, evidence: issue.evidence, remediation: issue.remediation })),
-  checks: ["pedagogy-review"],
+export type SpatialQaInput = {
+  canvas: DiagramCanvas;
+  safeArea: { top: number; right: number; bottom: number; left: number };
+  layouts: ResolvedLayout[];
+};
+
+const rectIntersects = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+  a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+/**
+ * Verifies the persisted `resolved-layout/v1` independently of the solver run:
+ * layers must stay inside the canvas, paint order must be unique, and no layer
+ * may overlap the caption panel. The LLM supplies semantics, never pixels, so
+ * this is the deterministic check on whatever the solver produced.
+ */
+export const spatialQa = (input: SpatialQaInput): QaCheckResult => {
+  const issues: QaIssue[] = [];
+  const captionPanel = {
+    x: input.safeArea.left,
+    y: input.canvas.height - input.safeArea.bottom,
+    width: input.canvas.width - input.safeArea.left - input.safeArea.right,
+    height: input.safeArea.bottom,
+  };
+  for (const layout of input.layouts) {
+    if (layout.canvas.width !== input.canvas.width || layout.canvas.height !== input.canvas.height) {
+      issues.push({ rule: "spatial-canvas-mismatch", evidence: { sceneId: layout.sceneId, layoutCanvas: layout.canvas, canvas: input.canvas }, remediation: "Recompute the resolved layout against the locked manifest canvas." });
+    }
+    const seenZ = new Set<number>();
+    for (const layer of layout.layers) {
+      if (layer.bounds.x < 0 || layer.bounds.y < 0 || layer.bounds.x + layer.bounds.width > input.canvas.width || layer.bounds.y + layer.bounds.height > input.canvas.height) {
+        issues.push({ rule: "spatial-layer-out-of-bounds", evidence: { sceneId: layout.sceneId, layerId: layer.id, bounds: layer.bounds, canvas: input.canvas }, remediation: "Re-solve the overlay so every layer stays inside the canvas." });
+      }
+      if (seenZ.has(layer.zIndex)) {
+        issues.push({ rule: "spatial-z-index-duplicate", evidence: { sceneId: layout.sceneId, layerId: layer.id, zIndex: layer.zIndex }, remediation: "Re-solve the overlay so each layer has a unique paint order." });
+      }
+      seenZ.add(layer.zIndex);
+      if (captionPanel.width > 0 && captionPanel.height > 0 && rectIntersects(layer.bounds, captionPanel)) {
+        issues.push({ rule: "spatial-caption-overlap", evidence: { sceneId: layout.sceneId, layerId: layer.id, bounds: layer.bounds, captionPanel }, remediation: "Re-solve the overlay so diagram layers do not overlap the caption panel." });
+      }
+    }
+  }
+  return { checks: ["spatial-solve", "spatial-containment", "spatial-z-order", "spatial-caption-overlap"], issues };
+};
+
+/** Composes every Tier A deterministic check into one zero-token tier result. */
+export const deterministicQa = (...checks: QaCheckResult[]): QaTierResult => ({
+  tier: "A",
+  checks: checks.flatMap((check) => check.checks),
+  issues: checks.flatMap((check) => check.issues),
+});
+
+/** Reduces the single separately routed Tier B review; no self-validation. */
+export const consolidatedReviewQa = (review: ConsolidatedReview): QaTierResult => ({
+  tier: "B",
+  issues: consolidatedReviewIssues(review),
+  checks: ["consolidated-review"],
 });
 
 export type QaConvergence = {
   complete: boolean;
-  missing: QaBranchName[];
+  missing: QaTierName[];
   issues: QaIssue[];
   checks: string[];
 };
 
 /**
- * Convergence rule: approval may only be scheduled once every declared branch
- * has reported, and any critical finding fails the run. A partially completed
- * fan-out can therefore never produce a passing `qa-report/v1`.
+ * Convergence rule: approval may only be scheduled once every declared tier has
+ * reported, and any critical finding fails the run. A partially completed tier
+ * can therefore never produce a passing `qa-report/v1`.
  */
-export const convergeQaBranches = (results: QaBranchResult[]): QaConvergence => {
-  const reported = new Set(results.map((result) => result.branch));
-  const missing = QA_BRANCHES.filter((branch) => !reported.has(branch));
+export const convergeQaTiers = (results: QaTierResult[]): QaConvergence => {
+  const reported = new Set(results.map((result) => result.tier));
+  const missing = QA_TIERS.filter((tier) => !reported.has(tier));
   return {
     complete: missing.length === 0,
     missing: [...missing],

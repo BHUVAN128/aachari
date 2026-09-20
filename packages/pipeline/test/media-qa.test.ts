@@ -122,6 +122,12 @@ describe("illustration candidate verification", () => {
     expect(validateIllustrationCandidate({ bytes: png(1024, 1024), mimeType: "image/gif" }).map((issue) => issue.rule)).toContain("illustration-mime-type");
   });
 
+  it("rejects JPEG because generated raster illustrations are PNG-only", () => {
+    const issues = validateIllustrationCandidate({ bytes: jpeg(1024, 1024), mimeType: "image/jpeg" });
+    expect(issues.map((issue) => issue.rule)).toContain("illustration-mime-type");
+    expect(issues.find((issue) => issue.rule === "illustration-mime-type")?.evidence).toMatchObject({ allowed: ["image/png"] });
+  });
+
   it("rejects an undersized or unreadable candidate", () => {
     const rules = validateIllustrationCandidate({ bytes: png(64, 64), mimeType: "image/png" }).map((issue) => issue.rule);
     expect(rules).toContain("illustration-dimensions");

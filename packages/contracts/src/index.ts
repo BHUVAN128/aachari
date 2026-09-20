@@ -351,18 +351,21 @@ export const QaFindingSchema = z.object({
 });
 export type QaFinding = z.infer<typeof QaFindingSchema>;
 
-export const PedagogyReviewSchema = z.object({
-  schemaVersion: z.literal("pedagogy-review/v1"),
-  objectiveCovered: z.boolean(),
-  oneIdeaPerBeat: z.boolean(),
-  readingLevelAppropriate: z.boolean(),
+/**
+ * One consolidated model review for Tier B. A single call sees the locked
+ * fact-pack, script, blueprint, diagram vocabulary, and preview metadata and
+ * returns typed per-domain findings, replacing separate per-domain reviewers.
+ */
+export const ConsolidatedReviewSchema = z.object({
+  schemaVersion: z.literal("consolidated-review/v1"),
   issues: z.array(z.object({
-    severity: z.enum(["info", "warning", "critical"]),
+    domain: z.enum(["factual", "pedagogy", "visual", "audio"]),
+    severity: QaSeveritySchema,
     evidence: z.string().min(1),
     remediation: z.string().min(1),
   })),
 });
-export type PedagogyReview = z.infer<typeof PedagogyReviewSchema>;
+export type ConsolidatedReview = z.infer<typeof ConsolidatedReviewSchema>;
 
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(["approved", "rejected"]),

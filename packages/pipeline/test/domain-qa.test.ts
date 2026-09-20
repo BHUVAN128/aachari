@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApprovedScriptSchema, FactPackSchema, PedagogyReviewSchema } from "@upcraft/contracts";
-import { pedagogyReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "../src/domain-qa.ts";
+import { ApprovedScriptSchema, ConsolidatedReviewSchema, FactPackSchema } from "@upcraft/contracts";
+import { consolidatedReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "../src/domain-qa.ts";
 
 const sceneId = "22222222-2222-4222-8222-222222222222";
 const lineId = "33333333-3333-4333-8333-333333333333";
@@ -58,24 +58,28 @@ describe("client-production gates", () => {
   });
 });
 
-describe("pedagogy review gate", () => {
-  const review = (overrides: Record<string, unknown> = {}) => PedagogyReviewSchema.parse({ schemaVersion: "pedagogy-review/v1", objectiveCovered: true, oneIdeaPerBeat: true, readingLevelAppropriate: true, issues: [], ...overrides });
+describe("consolidated review gate", () => {
+  const review = (overrides: Record<string, unknown> = {}) => ConsolidatedReviewSchema.parse({ schemaVersion: "consolidated-review/v1", issues: [], ...overrides });
 
-  it("accepts a clean review", () => {
-    expect(pedagogyReviewIssues(review())).toEqual([]);
+  it("accepts a clean consolidated review", () => {
+    expect(consolidatedReviewIssues(review())).toEqual([]);
   });
 
-  it("blocks release on a critical pedagogy defect", () => {
-    const issues = pedagogyReviewIssues(review({ issues: [{ severity: "critical", evidence: "Scene 2 teaches two ideas at once", remediation: "Split the beat" }] }));
-    expect(issues.map((issue) => issue.rule)).toContain("pedagogy-critical");
+  it("blocks release on a critical finding and names its domain", () => {
+    const rules = consolidatedReviewIssues(review({ issues: [{ domain: "factual", severity: "critical", evidence: "Claim 3 is unsupported", remediation: "Remove the claim" }] })).map((issue) => issue.rule);
+    expect(rules).toContain("consolidated-factual-critical");
   });
 
-  it("blocks release when a mandatory pedagogy check fails", () => {
-    const rules = pedagogyReviewIssues(review({ objectiveCovered: false, oneIdeaPerBeat: false, readingLevelAppropriate: false })).map((issue) => issue.rule);
-    expect(rules).toEqual(expect.arrayContaining(["pedagogy-objective-not-covered", "pedagogy-multiple-ideas-per-beat", "pedagogy-reading-level"]));
+  it("blocks release on critical findings from any domain", () => {
+    const rules = consolidatedReviewIssues(review({ issues: [
+      { domain: "pedagogy", severity: "critical", evidence: "Scene 2 teaches two ideas at once", remediation: "Split the beat" },
+      { domain: "visual", severity: "critical", evidence: "Diagram label is illegible", remediation: "Enlarge the label" },
+      { domain: "audio", severity: "critical", evidence: "Narration is clipped", remediation: "Regenerate the audio" },
+    ] })).map((issue) => issue.rule);
+    expect(rules).toEqual(expect.arrayContaining(["consolidated-pedagogy-critical", "consolidated-visual-critical", "consolidated-audio-critical"]));
   });
 
   it("does not block on advisory info or warning notes", () => {
-    expect(pedagogyReviewIssues(review({ issues: [{ severity: "info", evidence: "Nice hook", remediation: "Keep" }, { severity: "warning", evidence: "Could add a recap", remediation: "Optional" }] }))).toEqual([]);
+    expect(consolidatedReviewIssues(review({ issues: [{ domain: "pedagogy", severity: "info", evidence: "Nice hook", remediation: "Keep" }, { domain: "visual", severity: "warning", evidence: "Could add a recap", remediation: "Optional" }] }))).toEqual([]);
   });
 });

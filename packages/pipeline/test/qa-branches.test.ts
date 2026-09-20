@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ApprovedScriptSchema, BlueprintSchema, DiagramModelSchema, FactPackSchema, type DiagramModel } from "@upcraft/contracts";
+import { ApprovedScriptSchema, BlueprintSchema, ConsolidatedReviewSchema, DiagramModelSchema, FactPackSchema, ResolvedLayoutSchema, type DiagramModel } from "@upcraft/contracts";
 import type { MediaProbe } from "@upcraft/compositor";
 import type { DiagramPalette } from "@upcraft/compositor";
 import {
-  QA_BRANCHES,
+  QA_TIERS,
   audioRenderQa,
-  convergeQaBranches,
-  pedagogyQa,
+  consolidatedReviewQa,
+  convergeQaTiers,
+  deterministicQa,
+  spatialQa,
   structuralQa,
   visualQa,
-  type QaBranchResult,
+  type QaTierResult,
 } from "../src/qa-branches.ts";
 import { sceneDiagramArea } from "../src/stages.ts";
 
@@ -58,15 +60,22 @@ const diagramModel = (labels: string[]): DiagramModel => DiagramModelSchema.pars
   claimIds: [claimId],
 });
 
+const layout = (overrides: Record<string, unknown> = {}) => ResolvedLayoutSchema.parse({
+  schemaVersion: "resolved-layout/v1",
+  sceneId,
+  canvas,
+  layers: [{ id: "diagram-" + sceneId, matrix: [1, 0, 0, 1, 0, 0], bounds: { x: 230, y: 302, width: 1459, height: 518 }, zIndex: 1 }],
+  ...overrides,
+});
+
 const probe: MediaProbe = { durationMs: 30_000, width: 1920, height: 1080, fps: 30, videoCodec: "h264", audioCodec: "aac", hasAudio: true };
 const expected = { durationMs: 30_000, width: 1920, height: 1080, fps: 30, frames: 900, codec: "h264" };
 
-describe("structural QA branch", () => {
+describe("Tier A structural check", () => {
   const { cue, words } = buildCue(["Light", "energy", "becomes", "chemical", "energy"], 100);
 
   it("accepts a complete run and always reports every structural check", () => {
     const result = structuralQa({ captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["asset-1"], sceneAssetIds: ["asset-1"] });
-    expect(result.branch).toBe("structural");
     expect(result.issues).toEqual([]);
     expect(result.checks).toContain("schema");
     expect(result.checks).toContain("domain-policy");
@@ -86,7 +95,7 @@ describe("structural QA branch", () => {
     expect(rules).toContain("caption-index-integrity");
   });
 
-  it("applies the domain policy gates inside the structural branch", () => {
+  it("applies the domain policy gates inside the structural check", () => {
     const engineering = structuralQa({
       captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"],
       domainPolicy: { domain: "engineering", script, factPack, blueprint, diagramLabels: [], sources: [], assets: [] },
@@ -107,7 +116,7 @@ describe("structural QA branch", () => {
   });
 });
 
-describe("visual QA branch", () => {
+describe("Tier A visual check", () => {
   const { cue, words } = buildCue(["Light", "energy", "becomes", "chemical", "energy"], 100);
   const area = sceneDiagramArea(canvas);
 
@@ -116,7 +125,6 @@ describe("visual QA branch", () => {
       canvas, safeArea, captions: [cue], words, lockedTexts, allowedClaimIds: new Set([claimId]),
       diagramModels: [diagramModel(["light energy", "chemical energy"])], palette, area,
     });
-    expect(result.branch).toBe("visual");
     expect(result.issues).toEqual([]);
     expect(result.checks).toContain("caption-layout");
     expect(result.checks).toContain("diagram-geometry");
@@ -139,12 +147,38 @@ describe("visual QA branch", () => {
   });
 });
 
-describe("audio and render QA branch", () => {
+describe("Tier A spatial solve verification", () => {
+  it("accepts a resolved layout that stays inside the canvas and clear of captions", () => {
+    const result = spatialQa({ canvas, safeArea, layouts: [layout()] });
+    expect(result.issues).toEqual([]);
+    expect(result.checks).toContain("spatial-solve");
+  });
+
+  it("rejects an out-of-bounds layer, a duplicate paint order, and a caption overlap", () => {
+    const bad = layout({
+      layers: [
+        { id: "a", matrix: [1, 0, 0, 1, 0, 0], bounds: { x: 1800, y: 100, width: 400, height: 400 }, zIndex: 1 },
+        { id: "b", matrix: [1, 0, 0, 1, 0, 0], bounds: { x: 100, y: 100, width: 200, height: 200 }, zIndex: 1 },
+        { id: "c", matrix: [1, 0, 0, 1, 0, 0], bounds: { x: 200, y: 950, width: 300, height: 100 }, zIndex: 2 },
+      ],
+    });
+    const rules = spatialQa({ canvas, safeArea, layouts: [bad] }).issues.map((issue) => issue.rule);
+    expect(rules).toContain("spatial-layer-out-of-bounds");
+    expect(rules).toContain("spatial-z-index-duplicate");
+    expect(rules).toContain("spatial-caption-overlap");
+  });
+
+  it("rejects a layout solved against a different canvas", () => {
+    const rules = spatialQa({ canvas, safeArea, layouts: [layout({ canvas: { width: 1080, height: 1920 } })] }).issues.map((issue) => issue.rule);
+    expect(rules).toContain("spatial-canvas-mismatch");
+  });
+});
+
+describe("Tier A audio and render check", () => {
   const { words } = buildCue(["Light", "energy", "becomes", "chemical", "energy"], 100);
 
   it("accepts aligned narration and a preview that matches the locked manifest", () => {
     const result = audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, preview: probe, expected });
-    expect(result.branch).toBe("audio-render");
     expect(result.issues).toEqual([]);
   });
 
@@ -156,43 +190,55 @@ describe("audio and render QA branch", () => {
   });
 });
 
-describe("pedagogy QA branch", () => {
+describe("Tier B consolidated review", () => {
   it("reduces a separately routed review without ever rewriting the lesson", () => {
-    const passing = pedagogyQa({ schemaVersion: "pedagogy-review/v1", objectiveCovered: true, oneIdeaPerBeat: true, readingLevelAppropriate: true, issues: [] });
+    const passing = consolidatedReviewQa(ConsolidatedReviewSchema.parse({ schemaVersion: "consolidated-review/v1", issues: [] }));
+    expect(passing.tier).toBe("B");
     expect(passing.issues).toEqual([]);
-    const failing = pedagogyQa({ schemaVersion: "pedagogy-review/v1", objectiveCovered: false, oneIdeaPerBeat: true, readingLevelAppropriate: false, issues: [{ severity: "critical", evidence: "unsupported", remediation: "revise" }] });
-    expect(failing.issues.map((issue) => issue.rule)).toEqual(expect.arrayContaining(["pedagogy-critical", "pedagogy-objective-not-covered", "pedagogy-reading-level"]));
+    const failing = consolidatedReviewQa(ConsolidatedReviewSchema.parse({ schemaVersion: "consolidated-review/v1", issues: [{ domain: "factual", severity: "critical", evidence: "unsupported", remediation: "revise" }] }));
+    expect(failing.issues.map((issue) => issue.rule)).toEqual(["consolidated-factual-critical"]);
   });
 });
 
-describe("QA branch convergence", () => {
+describe("Tier A composition and convergence", () => {
   const { cue, words } = buildCue(["Light", "energy"], 0);
-  const passing: QaBranchResult = { branch: "structural", issues: [], checks: ["schema"] };
-  const pedagogy: QaBranchResult = { branch: "pedagogy", issues: [], checks: ["pedagogy-review"] };
-  const visual: QaBranchResult = { branch: "visual", issues: [], checks: ["caption-layout"] };
-  const audio: QaBranchResult = { branch: "audio-render", issues: [], checks: ["render-integrity"] };
+  const area = sceneDiagramArea(canvas);
 
-  it("declares exactly the four governed branches", () => {
-    expect([...QA_BRANCHES]).toEqual(["structural", "pedagogy", "visual", "audio-render"]);
+  it("composes every deterministic check into one zero-token Tier A result", () => {
+    const tierA = deterministicQa(
+      structuralQa({ captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"] }),
+      visualQa({ canvas, safeArea, captions: [cue], words, lockedTexts: [], allowedClaimIds: new Set(), diagramModels: [], palette, area }),
+      audioRenderQa({ words, narrationDurationMs: words.at(-1)!.endMs + 120, preview: probe, expected }),
+      spatialQa({ canvas, safeArea, layouts: [layout()] }),
+    );
+    expect(tierA.tier).toBe("A");
+    expect(tierA.issues).toEqual([]);
+    expect(tierA.checks).toEqual(expect.arrayContaining(["schema", "caption-layout", "render-integrity", "spatial-solve"]));
   });
 
-  it("is complete only when every branch has reported", () => {
-    expect(convergeQaBranches([passing, pedagogy, visual, audio])).toMatchObject({ complete: true, missing: [], issues: [] });
-    const partial = convergeQaBranches([passing, visual, audio]);
+  it("declares exactly the two governed tiers", () => {
+    expect([...QA_TIERS]).toEqual(["A", "B"]);
+  });
+
+  it("is complete only when every tier has reported", () => {
+    const passingA: QaTierResult = { tier: "A", issues: [], checks: ["schema"] };
+    const passingB: QaTierResult = { tier: "B", issues: [], checks: ["consolidated-review"] };
+    expect(convergeQaTiers([passingA, passingB])).toMatchObject({ complete: true, missing: [], issues: [] });
+    const partial = convergeQaTiers([passingA]);
     expect(partial.complete).toBe(false);
-    expect(partial.missing).toEqual(["pedagogy"]);
+    expect(partial.missing).toEqual(["B"]);
   });
 
-  it("surfaces a critical finding from any branch as a blocking issue", () => {
-    const failing: QaBranchResult = { branch: "visual", issues: [{ rule: "diagram-label-not-in-locked-vocabulary", evidence: {}, remediation: "fix" }], checks: ["caption-layout"] };
-    const convergence = convergeQaBranches([passing, pedagogy, failing, audio]);
+  it("surfaces a critical finding from either tier as a blocking issue", () => {
+    const failing: QaTierResult = { tier: "B", issues: [{ rule: "consolidated-factual-critical", evidence: {}, remediation: "fix" }], checks: ["consolidated-review"] };
+    const convergence = convergeQaTiers([{ tier: "A", issues: [], checks: [] }, failing]);
     expect(convergence.complete).toBe(true);
-    expect(convergence.issues.map((issue) => issue.rule)).toContain("diagram-label-not-in-locked-vocabulary");
+    expect(convergence.issues.map((issue) => issue.rule)).toContain("consolidated-factual-critical");
   });
 
-  it("does not report pass while a branch is still missing, even with no findings yet", () => {
-    const convergence = convergeQaBranches([audio]);
+  it("does not report pass while a tier is still missing, even with no findings yet", () => {
+    const convergence = convergeQaTiers([{ tier: "A", issues: [], checks: [] }]);
     expect(convergence.complete).toBe(false);
-    expect(convergence.missing).toEqual(expect.arrayContaining(["structural", "pedagogy", "visual"]));
+    expect(convergence.missing).toEqual(["B"]);
   });
 });

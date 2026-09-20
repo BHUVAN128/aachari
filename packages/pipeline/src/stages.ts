@@ -9,8 +9,8 @@ import {
   BlueprintSchema,
   ClaimVerificationSchema,
   DiagramModelSchema,
+  ConsolidatedReviewSchema,
   FactPackSchema,
-  PedagogyReviewSchema,
   ProjectManifestSchema,
   ResolvedLayoutSchema,
   ScriptVerificationSchema,
@@ -61,7 +61,7 @@ import { buildSceneAssetBrief, buildSceneAssetBriefs, buildSceneDirections, buil
 import { renderAndValidateDiagram, type DiagramPalette } from "./diagram-qa.ts";
 import { imageDimensions, validateIllustrationCandidate, validateRenderIntegrity, validateVoiceAlignment } from "./media-qa.ts";
 import { validateClientStyleApproval } from "./domain-qa.ts";
-import { audioRenderQa, convergeQaBranches, pedagogyQa, structuralQa, visualQa, type QaBranchResult } from "./qa-branches.ts";
+import { audioRenderQa, consolidatedReviewQa, convergeQaTiers, deterministicQa, spatialQa, structuralQa, visualQa, type QaTierResult } from "./qa-branches.ts";
 import { buildSourceEvidenceMap, canonicalNarrationText, contextManifest, projectFactVerificationContext, projectScriptContext, projectVisualContext, sourceEvidenceSegments } from "./context.ts";
 
 type Json = Record<string, unknown>;
@@ -580,6 +580,8 @@ const runQa = async (runId: string) => {
     const parsed = DiagramModelSchema.safeParse(model);
     return parsed.success ? [parsed.data] : [];
   });
+  const layoutBundle = layoutArtifact ? requireContent<{ canvas: { width: number; height: number }; layouts: unknown[] }>(layoutArtifact, "resolved-layout") : undefined;
+  const layouts = (layoutBundle?.layouts ?? []).map((layout) => ResolvedLayoutSchema.parse(layout));
 
   // Narration and preview are re-probed from their stored bytes so the audio and
   // render-integrity findings cannot be satisfied by the pre-render request.
@@ -598,19 +600,29 @@ const runQa = async (runId: string) => {
   const allowedClaimIds = new Set((factPack?.claims ?? []).map((claim) => claim.id));
   const expectedDurationMs = manifest.words.at(-1)?.endMs ?? 0;
 
-  // The separately routed Gemini review is started first so its network
-  // round-trip overlaps the deterministic structural, visual, and audio branches
-  // instead of adding its full latency after them.
-  const pedagogyBranch: Promise<QaBranchResult> = (async () => {
-    if (!run || !factPack || !blueprint) return { branch: "pedagogy", issues: [], checks: ["pedagogy-review"] };
+  // Tier B is one consolidated, separately routed review. Starting it before
+  // the deterministic Tier A checks lets its network round-trip overlap them
+  // instead of adding its full latency after they finish.
+  const reviewBranch: Promise<QaTierResult> = (async () => {
+    if (!run || !factPack || !blueprint) return { tier: "B", issues: [], checks: ["consolidated-review"] };
     const reviewStartedAt = Date.now();
-    const reviewContext = { objective: blueprint.objective, scenes: blueprint.scenes, narration: script.narration, claims: factPack.claims };
-    const reviewResult = await verifyClaims(`Independently review this lesson's pedagogy against its stated objective and verified claims. Return schemaVersion "pedagogy-review/v1", booleans objectiveCovered, oneIdeaPerBeat, readingLevelAppropriate, and issues [{severity,evidence,remediation}]. Use severity "critical" only for a genuine pedagogy defect. Do not rewrite the script or add facts.\n${JSON.stringify(reviewContext)}`);
-    await recordUsage(runId, "qa", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", reviewStartedAt, reviewResult.usage, "pedagogy-review/v1", contextManifest("pedagogy-review-context/v1", [{ role: "script-and-fact-pack", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length }]));
-    return pedagogyQa(PedagogyReviewSchema.parse(reviewResult.value));
+    const reviewContext = {
+      objective: blueprint.objective,
+      scenes: blueprint.scenes,
+      narration: script.narration,
+      claims: factPack.claims,
+      diagramLabels,
+      captions: manifest.captions,
+      preview: { durationMs: previewProbe.durationMs, width: previewProbe.width, height: previewProbe.height, fps: previewProbe.fps, hasAudio: previewProbe.hasAudio },
+    };
+    const reviewResult = await verifyClaims(`Independently review this lesson end to end against its verified claims and stated objective. Return schemaVersion "consolidated-review/v1" and issues [{domain,severity,evidence,remediation}], where domain is factual, pedagogy, visual, or audio. Use severity "critical" only for a genuine defect that blocks release. Do not rewrite the script, invent facts, or add labels.\n${JSON.stringify(reviewContext)}`);
+    await recordUsage(runId, "qa", "gemini", process.env.GEMINI_VERIFIER_MODEL ?? "gemini-3.8-flash", reviewStartedAt, reviewResult.usage, "consolidated-review/v1", contextManifest("consolidated-review-context/v1", [{ role: "fact-pack-script-preview", hash: sha(reviewContext), chars: JSON.stringify(reviewContext).length, itemCount: script.narration.length + factPack.claims.length + manifest.captions.length }]));
+    return consolidatedReviewQa(ConsolidatedReviewSchema.parse(reviewResult.value));
   })();
 
-  const branchResults: QaBranchResult[] = [
+  // Tier A: deterministic, zero-token gates. Nothing here can be satisfied by a
+  // model's own claim that its output is valid.
+  const tierA = deterministicQa(
     structuralQa({
       captions, previewPresent: Boolean(previewArtifact), missingArtifacts,
       sceneCount: manifest.scenes.length, scriptSceneCount,
@@ -620,20 +632,21 @@ const runQa = async (runId: string) => {
     }),
     visualQa({ canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words, lockedTexts, allowedClaimIds, diagramModels, palette, area }),
     audioRenderQa({ words: manifest.words, narrationDurationMs, preview: previewProbe, expected: { durationMs: expectedDurationMs, width: canvas.width, height: canvas.height, fps: manifest.fps, frames: Math.ceil((expectedDurationMs / 1000) * manifest.fps), codec: "h264" } }),
-    await pedagogyBranch,
-  ];
+    spatialQa({ canvas, safeArea: manifest.safeArea, layouts }),
+  );
+  const tierB = await reviewBranch;
 
-  // All four branches must report before approval may be scheduled, and any
-  // critical finding fails the run through the existing visible-failure path.
-  const convergence = convergeQaBranches(branchResults);
-  if (!convergence.complete) throw new Error("Release QA branches did not converge: " + convergence.missing.join(", "));
+  // Both tiers must report before approval may be scheduled, and any critical
+  // finding fails the run through the existing visible-failure path.
+  const convergence = convergeQaTiers([tierA, tierB]);
+  if (!convergence.complete) throw new Error("Release QA tiers did not converge: " + convergence.missing.join(", "));
   if (convergence.issues.length) {
     await getDb().insert(qaFindings).values(convergence.issues.map((issue) => ({ runId, rule: issue.rule, severity: "critical" as const, evidence: issue.evidence, remediation: issue.remediation })));
     throw new Error("Release QA failed: " + convergence.issues.map((issue) => issue.rule).join(", "));
   }
   return saveArtifact({
     runId, stage: "qa", role: "qa-report", schemaVersion: "qa-report/v1", inputHash: sha([manifest, captions]),
-    content: { passed: true, branches: branchResults.map((result) => ({ branch: result.branch, checks: result.checks, findings: result.issues.length })), checks: convergence.checks },
+    content: { passed: true, tiers: [tierA, tierB].map((tier) => ({ tier: tier.tier, checks: tier.checks, findings: tier.issues.length })), checks: convergence.checks },
   });
 };
 

@@ -143,7 +143,11 @@ export const imageDimensions = (bytes: Buffer, mimeType: string): { width: numbe
   return undefined;
 };
 
-/** Deterministic half of the image-asset gate; style/review remains a human gate. */
+/**
+ * Deterministic half of the image-asset gate; style/review remains a human gate.
+ * Generated raster illustrations are PNG-only: factual labels, arrows, diagrams,
+ * equations, and captions are deterministic SVG/Remotion instead.
+ */
 export const validateIllustrationCandidate = (params: {
   bytes: Buffer;
   mimeType: string;
@@ -153,7 +157,7 @@ export const validateIllustrationCandidate = (params: {
   minHeight?: number;
 }): MediaIssue[] => {
   const issues: MediaIssue[] = [];
-  const allowed = params.allowedMimeTypes ?? ["image/png", "image/jpeg"];
+  const allowed = params.allowedMimeTypes ?? ["image/png"];
   if (!allowed.includes(params.mimeType)) {
     issues.push({ rule: "illustration-mime-type", evidence: { mimeType: params.mimeType, allowed }, remediation: "Reject the candidate; only verified image MIME types may attach to a run." });
   }

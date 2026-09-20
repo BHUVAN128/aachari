@@ -41,23 +41,27 @@ the specified regression evidence are present.
   every asset and an explicit client style approval before release.
 - [~] Phase 3 — optional illustration candidates and sound plan: the visual
   bible's persistent entities drive a deterministic per-scene illustration
-  decision (recorded omission or candidate), candidates are generated in
-  parallel behind capability gating and verified from their bytes (MIME, size,
-  intrinsic dimensions), a recorded `sound-plan/v1` artifact carries ducking
-  parameters and explicit per-scene omission, and any selected AI illustration
-  forces human approval instead of automatic school/college publication.
+  decision (recorded omission or candidate), candidates are generated behind
+  capability gating and verified from their bytes (PNG MIME, size, intrinsic
+  dimensions), and any selected AI illustration forces human approval instead of
+  automatic school/college publication. A `sound-plan/v1` artifact exists but is
+  deferred/not a release gate, as is multi-candidate illustration evaluation.
   Remaining: reviewer style/text scoring and solver-based placement.
 - [~] Phase 4 — measured media gates: caption wording/line/safe-area/contrast
   validation, audio-duration-vs-alignment checks on the narration MP3, render
   integrity measured from the produced MP4 (dimensions, duration, fps, frame
-  count, audio track, codec), pre-render asset-availability fencing, and
-  persisted renderer/composition/export-profile provenance. QA now runs as four
-  independent concurrent branches (structural/policy, separately routed Gemini
-  pedagogy, visual/caption, audio/render-integrity) that converge through a pure
-  reducer before approval; the visual branch re-renders the typed diagram models
-  persisted on `selected-assets`, and the audio/render branch re-probes the
-  stored narration and preview bytes instead of the pre-render request.
-  Remaining: loudness and pronunciation checks and multi-format renders.
+  count, audio track, codec), pre-render asset-availability fencing, spatial
+  solver assertion over the persisted `resolved-layout/v1` (containment, unique
+  z-order, caption overlap), and persisted renderer/composition/export-profile
+  provenance. Release QA is tiered: Tier A composes every deterministic check
+  into one zero-token result, Tier B is a single separately routed consolidated
+  model review, and `convergeQaTiers` gates approval on both tiers reporting
+  with no critical finding. The visual check re-renders the typed diagram models
+  persisted on `selected-assets`, and the audio/render check re-probes the stored
+  narration and preview bytes instead of the pre-render request. Remaining:
+  loudness and pronunciation checks, multi-format renders, and preview-still
+  vision in Tier B. Deep per-domain model QA branches are deferred until Tier B
+  findings justify them.
 
 ## Remaining implementation order
 
@@ -71,13 +75,15 @@ the specified regression evidence are present.
    generation/verification, recorded illustration decisions, and the sound
    plan are implemented; reviewer style/text scoring and solver placement
    remain.
-4. [x] Implement independent factual/pedagogy, visual/caption, audio, and
-   render-integrity QA branches that converge before approval. `qa-branches.ts`
-   provides pure structural/policy, visual/caption, audio/render-integrity, and
-   pedagogy reducers; `runQa` starts the separately routed Gemini review, runs
-   the deterministic branches beside it, re-renders diagram models for an
-   independent visual verdict, re-probes stored media bytes, and gates approval
-   on `convergeQaBranches` reporting all four branches with no critical finding.
+4. [x] Implement tiered release QA that converges before approval. `qa-branches.ts`
+   provides pure deterministic checks (structural/policy, visual/caption,
+   spatial-solve, audio/render-integrity) composed by `deterministicQa` into
+   Tier A, a `consolidatedReviewQa` reducer for the single separately routed
+   Tier B review, and `convergeQaTiers`; `runQa` starts the Tier B call, runs the
+   deterministic checks beside it, re-renders diagram models for an independent
+   visual verdict, re-probes stored media bytes, and gates approval on both tiers
+   with no critical finding. Deep per-domain model QA branches are deferred until
+   measured Tier B findings justify them.
 5. [~] Add measured voice/caption/render gates, renderer and export-profile
    provenance, and tested multi-format renders. Caption layout, voice-alignment
    duration, render integrity, provenance, and pre-render asset fencing are
