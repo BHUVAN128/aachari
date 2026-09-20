@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CaptionCueSchema, ProjectManifestSchema } from "@upcraft/contracts";
+import { BlueprintSchema, CaptionCueSchema, ProjectManifestSchema } from "@upcraft/contracts";
 
 describe("video generation contracts", () => {
   it("keeps caption cues tied to valid word indexes", () => {
@@ -34,5 +34,17 @@ describe("video generation contracts", () => {
       }],
     });
     expect(manifest.scenes[0]?.layers[0]?.assetUrl).toBe("https://storage.example/asset.svg");
+  });
+
+  it("requires a v2 blueprint to declare its hook, recap, and prerequisites", () => {
+    const scene = { id: "22222222-2222-4222-8222-222222222222", order: 0, purpose: "Teach", claimIds: ["44444444-4444-4444-8444-444444444444"], visualBeat: "Reveal" };
+    expect(() => BlueprintSchema.parse({ schemaVersion: "lesson-blueprint/v2", objective: "O", prerequisites: ["none"], scenes: [scene], recap: "R" })).toThrow();
+    const v2 = BlueprintSchema.parse({ schemaVersion: "lesson-blueprint/v2", objective: "O", prerequisites: ["none"], hook: "H", recap: "R", scenes: [scene] });
+    expect(v2.schemaVersion).toBe("lesson-blueprint/v2");
+  });
+
+  it("retains the v1 blueprint parser for already-persisted artifacts", () => {
+    const v1 = BlueprintSchema.parse({ schemaVersion: "lesson-blueprint/v1", objective: "O", prerequisites: [], scenes: [{ id: "22222222-2222-4222-8222-222222222222", order: 0, purpose: "Teach", claimIds: ["44444444-4444-4444-8444-444444444444"], visualBeat: "Reveal" }] });
+    expect(v1.schemaVersion).toBe("lesson-blueprint/v1");
   });
 });

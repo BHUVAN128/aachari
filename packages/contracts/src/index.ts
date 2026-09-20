@@ -179,13 +179,44 @@ export const BlueprintSceneSchema = z.object({
   claimIds: z.array(z.string().uuid()),
   visualBeat: z.string().min(1),
 });
-export const BlueprintSchema = z.object({
-  schemaVersion: z.literal("lesson-blueprint/v1"),
+export type BlueprintScene = z.infer<typeof BlueprintSceneSchema>;
+
+/** Optional knowledge-check embedded in a v2 blueprint. */
+export const KnowledgeCheckSchema = z.object({
+  question: z.string().min(1).max(500),
+  options: z.array(z.string().min(1).max(300)).min(2).max(6),
+  answerIndex: z.number().int().nonnegative(),
+});
+export type KnowledgeCheck = z.infer<typeof KnowledgeCheckSchema>;
+
+const blueprintCore = {
   objective: z.string().min(1),
   prerequisites: z.array(z.string()),
   scenes: z.array(BlueprintSceneSchema).min(1),
+};
+
+/**
+ * Retained v1 parser so already-persisted blueprints remain readable. New runs
+ * always produce `lesson-blueprint/v2`, which Stage 3 requires to carry the
+ * hook, explanation arc (scenes), recap, and optional knowledge-check.
+ */
+export const BlueprintV1Schema = z.object({
+  schemaVersion: z.literal("lesson-blueprint/v1"),
+  ...blueprintCore,
 });
-export type Blueprint = z.infer<typeof BlueprintSchema>;
+export type BlueprintV1 = z.infer<typeof BlueprintV1Schema>;
+
+export const BlueprintV2Schema = z.object({
+  schemaVersion: z.literal("lesson-blueprint/v2"),
+  ...blueprintCore,
+  hook: z.string().min(1),
+  recap: z.string().min(1),
+  knowledgeCheck: KnowledgeCheckSchema.optional(),
+});
+export type Blueprint = z.infer<typeof BlueprintV2Schema>;
+
+export const BlueprintSchema = z.union([BlueprintV2Schema, BlueprintV1Schema]);
+export type StoredBlueprint = z.infer<typeof BlueprintSchema>;
 
 export const ScriptLineSchema = z.object({
   id: z.string().uuid(),

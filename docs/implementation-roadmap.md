@@ -22,6 +22,12 @@ the specified regression evidence are present.
   completeness and support reducers (source-verification failure), and
   optional-asset fallback decisions now exist. Remaining: PDF extraction,
   missing-required-asset, and DB-backed integration scenarios.
+- [x] Stage 3 blueprint contract — `lesson-blueprint/v2` now carries the hook,
+  explanation arc, recap, and optional knowledge-check required by §4, and
+  `blueprint-qa.ts` deterministically validates objective coverage,
+  prerequisites, strictly increasing scene order, per-scene and critical-claim
+  references before the blueprint may lock. The v1 parser is retained for
+  already-persisted artifacts.
 - [x] Phase 2 — deterministic scene plans and asset briefs (`scene-plan/v1`,
   `scene-asset-brief/v1`) derived only from locked blueprint/fact-pack/script,
   typed semantic SVG diagrams for processes, comparisons, equations, charts,

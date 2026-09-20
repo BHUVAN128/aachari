@@ -39,9 +39,11 @@ const factPack = FactPackSchema.parse({
   caveats: [],
 });
 const blueprint = BlueprintSchema.parse({
-  schemaVersion: "lesson-blueprint/v1",
+  schemaVersion: "lesson-blueprint/v2",
   objective: "Explain photosynthesis",
-  prerequisites: [],
+  prerequisites: ["none required"],
+  hook: "Why do leaves need light?",
+  recap: "Light energy becomes chemical energy.",
   scenes: [{ id: sceneId, order: 0, purpose: "Show light energy becoming chemical energy", claimIds: [claimId], visualBeat: "Light energy becomes chemical energy" }],
 });
 const script = ApprovedScriptSchema.parse({

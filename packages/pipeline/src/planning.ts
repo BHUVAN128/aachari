@@ -6,7 +6,7 @@ import {
   ScenePlanSchema,
   SoundPlanSchema,
   type ApprovedScript,
-  type Blueprint,
+  type BlueprintScene,
   type DiagramModel,
   type FactPack,
   type SceneAssetBrief,
@@ -150,7 +150,7 @@ export const expectedPlateIds = (model: Pick<DiagramModel, "kind" | "labels" | "
   }
 };
 
-export const buildSceneDirections = (params: { blueprint: Blueprint; script: ApprovedScript; factPack: FactPack }): SceneDirection[] => {
+export const buildSceneDirections = (params: { blueprint: { scenes: BlueprintScene[] }; script: ApprovedScript; factPack: FactPack }): SceneDirection[] => {
   const claimText = new Map(params.factPack.claims.map((claim) => [claim.id, claim.text]));
   return params.blueprint.scenes
     .slice()

@@ -18,7 +18,7 @@ const policyPalette: DiagramPalette = {
 const claim = (text: string, id = claimId) => ({ id, text, evidence: { sourceId, sourceHash, segmentIds: ["segment-one"], locator: "p1" }, critical: true });
 
 const factPack = FactPackSchema.parse({ schemaVersion: "fact-pack/v2", claims: [claim("Light energy becomes chemical energy in the leaf")], caveats: [] });
-const blueprint = BlueprintSchema.parse({ schemaVersion: "lesson-blueprint/v1", objective: "Explain photosynthesis", prerequisites: [], scenes: [{ id: sceneId, order: 0, purpose: "Show light energy becoming chemical energy", claimIds: [claimId], visualBeat: "Light energy becomes chemical energy" }] });
+const blueprint = BlueprintSchema.parse({ schemaVersion: "lesson-blueprint/v2", objective: "Explain photosynthesis", prerequisites: ["none required"], hook: "Why do leaves need light?", recap: "Light energy becomes chemical energy.", scenes: [{ id: sceneId, order: 0, purpose: "Show light energy becoming chemical energy", claimIds: [claimId], visualBeat: "Light energy becomes chemical energy" }] });
 const script = ApprovedScriptSchema.parse({ schemaVersion: "approved-script/v2", narration: [{ id: lineId, sceneId, text: "Light energy becomes chemical energy in the leaf.", claimIds: [claimId], visualAction: "Reveal each step of the process" }] });
 
 describe("locked-vocabulary label selection", () => {
