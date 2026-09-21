@@ -4,6 +4,7 @@ import { saveArtifact, requireContent, validationFeedback } from "../../artifact
 import { sha } from "../../artifacts/hashing.ts";
 import { withFallback } from "../../fallback.ts";
 import { recordUsage } from "../../usage.ts";
+import { getRun } from "../../runs.ts";
 import { assertScriptVerificationComplete } from "../../verification.ts";
 import { contextManifest, projectScriptContext } from "../../context.ts";
 import { scriptJsonSchema } from "../../prompts/script.ts";
@@ -19,8 +20,11 @@ export const runScript = async (ctx: StageContext): Promise<unknown> => {
   const blueprintContent = requireContent<{ scenes: Array<{ id: string; claimIds: string[]; purpose: string; visualBeat: string }> }>(blueprint, "lesson-blueprint");
   const factPackContent = FactPackSchema.parse(requireContent(factPack, "fact-pack"));
   const scriptContext = projectScriptContext(factPackContent, blueprintContent);
+  const run = await getRun(runId);
+  if (!run) throw new Error("Run not found");
+  const snapshotProjection = `Learner level: ${run.snapshot.learningLevel}\nAudience: ${run.snapshot.audienceCategory}\nLanguage: ${run.snapshot.language}\nDuration budget: ${run.snapshot.durationSeconds}s\n`;
   const route = ctx.route("script")!;
-  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` }), async (failedRoute, error) => {
+  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. ${snapshotProjection}Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` }), async (failedRoute, error) => {
     await recordUsage(runId, "script", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "script/v2", { projection: "scene-claim-projection/v1" }, "failed", error.code);
   });
   await recordUsage(runId, "script", generated.route.provider, generated.route.model, startedAt, generated.value.usage, "script/v2", contextManifest("scene-claim-projection/v1", [{ role: "script-context", hash: sha(scriptContext), chars: JSON.stringify(scriptContext).length, itemCount: scriptContext.claims.length + scriptContext.scenes.length }]));

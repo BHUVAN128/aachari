@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MODEL_CONFIG_VERSION, STAGE_ORDER, StageNameSchema } from "@upcraft/contracts";
-import { MODEL_ROUTES, STAGE_CAPABILITIES } from "@upcraft/providers";
+import { MODEL_ROUTES, STAGE_CAPABILITIES, resolveModelRoute } from "@upcraft/providers";
 import { resolveStageRoute } from "../src/routing.ts";
 
 describe("stage model routing", () => {
@@ -39,5 +39,10 @@ describe("stage model routing", () => {
     const verifier = resolveStageRoute("fact-verification");
     expect(generator?.provider).not.toBe(verifier?.provider);
     expect(generator?.capability).toBe("planning");
+  });
+
+  it("routes source-less web research to the approved search-grounded provider", () => {
+    expect(resolveModelRoute("research-web")).toMatchObject({ capability: "research-web", provider: "gemini", model: "gemini-3.8-flash", resolvedFrom: "default" });
+    expect(MODEL_ROUTES["research-web"].credentialEnv).toEqual(["GEMINI_API_KEY"]);
   });
 });

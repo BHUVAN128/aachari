@@ -1,6 +1,6 @@
 import { gateway } from "@ai-sdk/gateway";
 import { Output, ToolLoopAgent, isStepCount } from "ai";
-import { IntakeBriefSchema, type IntakeBrief, type ModelRoute } from "@upcraft/contracts";
+import { IntakeBriefV2Schema, type IntakeBriefV2, type ModelRoute } from "@upcraft/contracts";
 import type { ProviderResult } from "./usage.ts";
 import { assertIntakeCapabilities } from "./capabilities.ts";
 import { resolveModelRoute } from "./model-config.ts";
@@ -8,18 +8,15 @@ import { resolveModelRoute } from "./model-config.ts";
 export { assertIntakeCapabilities };
 
 export const INTAKE_AGENT_ID = "intake-briefing-agent";
-export const INTAKE_PROMPT_VERSION = "intake-briefing/v1";
-
-// This is deliberately stricter than the model prompt. A structured response
-// that downgrades a health-adjacent request must be held, not allowed to open a
-// standard release route.
-const medicalRequestPattern = /\b(?:medical|medicine|diagnos(?:e|is|tic)|treat(?:ment|ing)?|patient|drug|medication|symptom|health|clinical|disease|illness|therapy|pharmacolog(?:y|ical))\b/i;
+export const INTAKE_PROMPT_VERSION = "intake-briefing/v2";
 
 const instructions = `You are the Intake Briefing Agent for a source-grounded educational video system.
 
-Convert only the user's lesson request into the strict intake-brief schema. You are metadata extraction, not a teacher or researcher. Never invent a source, claim, citation, narration, lesson explanation, visual asset, or medical advice. You have no tools and must not request web search or external retrieval.
+Convert the user's lesson request into the strict intake-brief/v2 schema. You are configuration extraction, not a teacher or researcher. Never invent a source, claim, citation, narration, lesson explanation, or visual asset. You have no tools and must not request web search or external retrieval.
 
-Use these defaults when the user did not explicitly provide a value: learner level Grade 8; audience school; risk domain standard; duration 60 seconds; visual profile "Precise, calm educational motion graphics". Preserve the selected language exactly. Classify potentially medical, diagnosis, treatment, patient, drug, symptom, or health-related requests conservatively as medical. Do not downgrade an ambiguous health request to standard.
+Extract the full video configuration from the request: topic, learner level, audience category, duration, language, aspect ratio, visual style, and destination. Use these defaults only when the user did not explicitly provide a value: learner level Grade 8; audience school; duration 60 seconds; aspect ratio 16:9; visual profile "Precise, calm educational motion graphics"; destination local. Preserve the selected language exactly.
+
+Interpret duration expressions into seconds (for example "10 minutes" becomes 600). Do not classify any topic as medical; every request is treated as a standard educational topic.
 
 Return only the requested structured object. Do not add fields, commentary, or reasoning.`;
 
@@ -33,25 +30,22 @@ export const createIntakeAgent = (route: ModelRoute) => new ToolLoopAgent({
   model: gateway(route.modelRef),
   instructions,
   tools: {},
-  output: Output.object({ schema: IntakeBriefSchema }),
+  output: Output.object({ schema: IntakeBriefV2Schema }),
   stopWhen: isStepCount(1),
 });
 
 const numeric = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
-/** Enforces non-negotiable intake routing invariants after schema parsing. */
-export const enforceIntakeBriefPolicy = (params: { requestText: string; language: string; brief: unknown }): IntakeBrief => {
-  const brief = IntakeBriefSchema.parse(params.brief);
+/** Enforces the non-negotiable intake invariant (language preservation) after schema parsing. */
+export const enforceIntakeBriefPolicy = (params: { requestText: string; language: string; brief: unknown }): IntakeBriefV2 => {
+  const brief = IntakeBriefV2Schema.parse(params.brief);
   if (brief.language !== params.language) {
     throw new Error("Intake Briefing Agent did not preserve the selected language exactly");
-  }
-  if (medicalRequestPattern.test(params.requestText) && brief.domain !== "medical") {
-    throw new Error("Intake Briefing Agent must route health-related requests as medical");
   }
   return brief;
 };
 
-export const generateIntakeBrief = async (params: { requestText: string; language: string }, env: NodeJS.ProcessEnv = process.env): Promise<ProviderResult<IntakeBrief>> => {
+export const generateIntakeBrief = async (params: { requestText: string; language: string }, env: NodeJS.ProcessEnv = process.env): Promise<ProviderResult<IntakeBriefV2>> => {
   const route = resolveModelRoute("intake-brief", env);
   const prompt = `Selected language: ${params.language}\nUser lesson request:\n${params.requestText}`;
   const result = await createIntakeAgent(route).generate({ prompt });

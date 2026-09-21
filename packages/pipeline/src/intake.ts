@@ -74,9 +74,7 @@ export const processIntakeSession = async (sessionId: string) => {
     const runId = await createVideoRun({
       ...result.value,
       sourceIds: [],
-      aspectRatio: "16:9",
-      requestedDestination: "local",
-      sources: [input.source],
+      sources: input.source ? [input.source] : [],
     });
     await db.update(intakeSessions).set({ status: "completed", brief: result.value, briefHash: hash(result.value), videoRunId: runId, updatedAt: new Date() }).where(eq(intakeSessions.id, sessionId));
     return runId;

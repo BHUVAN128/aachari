@@ -48,11 +48,9 @@ export async function POST(request: Request) {
       source = { kind: "url" as const, name: "Primary source", value };
     } else if (parsed.sourceText) {
       source = { kind: "text" as const, name: "Primary source", value: parsed.sourceText };
-    } else {
-      return NextResponse.json({ error: "Add a source by uploading TXT/Markdown/PDF, pasting a URL, or adding a new line beginning with Source:." }, { status: 400 });
     }
 
-    const input = IntakeSessionInputSchema.parse({ schemaVersion: "intake-session-input/v1", requestText: parsed.requestText.replace(detected ?? "", "").trim(), language, source });
+    const input = IntakeSessionInputSchema.parse({ schemaVersion: "intake-session-input/v1", requestText: parsed.requestText.replace(detected ?? "", "").trim(), language, ...(source ? { source } : {}) });
     const id = await createIntakeSession(input, sessionId);
     return NextResponse.json({ sessionId: id, status: "queued" }, { status: 202 });
   } catch (error) {

@@ -12,7 +12,6 @@ export type RunStatus = z.infer<typeof RunStatusSchema>;
 export const DomainSchema = z.enum([
   "standard",
   "engineering",
-  "medical",
   "client-production",
 ]);
 export type Domain = z.infer<typeof DomainSchema>;
@@ -69,6 +68,7 @@ export const ModelCapabilitySchema = z.enum([
   "fact-verification",
   "script-verification",
   "qa-review",
+  "research-web",
   "illustration",
   "narration",
 ]);
@@ -109,8 +109,7 @@ export type InputSnapshot = z.infer<typeof InputSnapshotSchema>;
 export const IntakeSessionStatusSchema = z.enum(["queued", "running", "failed", "completed"]);
 export type IntakeSessionStatus = z.infer<typeof IntakeSessionStatusSchema>;
 
-export const IntakeBriefSchema = z.object({
-  schemaVersion: z.literal("intake-brief/v1"),
+const intakeBriefCore = {
   topic: z.string().min(3).max(500),
   learningLevel: z.string().min(2).max(120),
   domain: DomainSchema,
@@ -118,7 +117,29 @@ export const IntakeBriefSchema = z.object({
   durationSeconds: z.number().int().min(15).max(900),
   language: z.string().min(2).max(16),
   visualProfile: z.string().min(2).max(200),
+};
+
+/**
+ * Retained v1 parser so already-persisted intake briefs remain readable. New
+ * runs always produce `intake-brief/v2`, which adds the remaining frozen
+ * snapshot surface (`aspectRatio`, `requestedDestination`) so a brief can map
+ * directly onto a complete `createVideoRun` payload.
+ */
+export const IntakeBriefV1Schema = z.object({
+  schemaVersion: z.literal("intake-brief/v1"),
+  ...intakeBriefCore,
 });
+export type IntakeBriefV1 = z.infer<typeof IntakeBriefV1Schema>;
+
+export const IntakeBriefV2Schema = z.object({
+  schemaVersion: z.literal("intake-brief/v2"),
+  ...intakeBriefCore,
+  aspectRatio: AspectRatioSchema.default("16:9"),
+  requestedDestination: z.string().min(1).max(200).default("local"),
+});
+export type IntakeBriefV2 = z.infer<typeof IntakeBriefV2Schema>;
+
+export const IntakeBriefSchema = z.union([IntakeBriefV2Schema, IntakeBriefV1Schema]);
 export type IntakeBrief = z.infer<typeof IntakeBriefSchema>;
 
 export const TextSourceInputSchema = z.object({
@@ -150,7 +171,7 @@ export const IntakeSessionInputSchema = z.object({
   schemaVersion: z.literal("intake-session-input/v1"),
   requestText: z.string().min(3).max(20_000),
   language: z.string().min(2).max(16),
-  source: SourceInputSchema,
+  source: SourceInputSchema.optional(),
 });
 export type IntakeSessionInput = z.infer<typeof IntakeSessionInputSchema>;
 
@@ -451,7 +472,7 @@ export const CreateRunInputSchema = InputSnapshotSchema.omit({
   sourceIds: true,
 }).extend({
   sourceIds: z.array(z.string().uuid()).default([]),
-  sources: z.array(SourceInputSchema).min(1, "At least one source is required for a source-grounded lesson."),
+  sources: z.array(SourceInputSchema).default([]),
 });
 export type CreateRunInput = z.infer<typeof CreateRunInputSchema>;
 

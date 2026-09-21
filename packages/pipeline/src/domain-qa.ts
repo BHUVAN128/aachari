@@ -2,8 +2,8 @@ import type { ApprovedScript, ConsolidatedReview, Domain, FactPack } from "@upcr
 
 /**
  * Domain policy gates from `benchmarkstofocus.md`. These are deterministic
- * checks over locked artifacts; they back up, but never replace, the mandatory
- * clinician approval for medical content.
+ * checks over locked artifacts. Medical topics are treated as standard
+ * educational content, so no medical-specific gate exists here.
  */
 export type DomainIssue = { rule: string; evidence: Record<string, unknown>; remediation: string };
 
@@ -34,21 +34,6 @@ export const validateEngineeringContent = (params: { domain: Domain; script: App
     issues.push({ rule: "engineering-calculations-missing", evidence: {}, remediation: "Show the calculation steps, not only the result." });
   }
   return issues;
-};
-
-const AUTHORITATIVE_SOURCE = /(\.gov(?:\/|$)|\.edu(?:\/|$)|who\.int|nih\.gov|pubmed|ncbi|cdc\.gov|nhs\.uk|cancer\.gov|cochrane)/i;
-
-/** Medical lessons require current, authoritative clinical sources. */
-export const validateMedicalSources = (params: { domain: Domain; sources: Array<{ sourceUrl: string | null; url?: string | null; retrievedAt?: Date | null }> }): DomainIssue[] => {
-  if (params.domain !== "medical") return [];
-  if (!params.sources.length) {
-    return [{ rule: "medical-sources-missing", evidence: {}, remediation: "Retrieve current authoritative clinical sources before a medical lesson may advance." }];
-  }
-  const authoritative = params.sources.filter((source) => AUTHORITATIVE_SOURCE.test(source.sourceUrl ?? source.url ?? ""));
-  if (!authoritative.length) {
-    return [{ rule: "medical-source-authority", evidence: { sources: params.sources.map((source) => source.sourceUrl ?? source.url ?? null) }, remediation: "Cite at least one authoritative clinical source; clinician approval remains the release authority." }];
-  }
-  return [];
 };
 
 /**

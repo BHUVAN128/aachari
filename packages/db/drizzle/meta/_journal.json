@@ -50,6 +50,13 @@
       "when": 1789906655171,
       "tag": "0006_bizarre_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790003800050,
+      "tag": "0007_safe_tigra",
+      "breakpoints": true
     }
   ]
 }

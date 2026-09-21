@@ -100,19 +100,13 @@ describe("Tier A structural check", () => {
   it("applies the domain policy gates inside the structural check", () => {
     const engineering = structuralQa({
       captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"],
-      domainPolicy: { domain: "engineering", script, factPack, blueprint, diagramLabels: [], sources: [], assets: [] },
+      domainPolicy: { domain: "engineering", script, factPack, blueprint, diagramLabels: [], assets: [] },
     }).issues.map((issue) => issue.rule);
     expect(engineering).toContain("engineering-units-missing");
 
-    const medical = structuralQa({
-      captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"],
-      domainPolicy: { domain: "medical", script, factPack, blueprint, diagramLabels: [], sources: [{ sourceUrl: "https://example.com/blog", retrievedAt: new Date() }], assets: [] },
-    }).issues.map((issue) => issue.rule);
-    expect(medical).toContain("medical-source-authority");
-
     const client = structuralQa({
       captions: { words, cues: [cue] }, previewPresent: true, missingArtifacts: [], sceneCount: 1, scriptSceneCount: 1, assetIds: ["a"], sceneAssetIds: ["a"],
-      domainPolicy: { domain: "client-production", script, factPack, blueprint, diagramLabels: [], sources: [], assets: [{ role: "diagram-1", provenance: {} }] },
+      domainPolicy: { domain: "client-production", script, factPack, blueprint, diagramLabels: [], assets: [{ role: "diagram-1", provenance: {} }] },
     }).issues.map((issue) => issue.rule);
     expect(client).toContain("client-rights-record-missing");
   });

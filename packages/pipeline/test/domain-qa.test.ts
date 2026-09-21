@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApprovedScriptSchema, ConsolidatedReviewSchema, FactPackSchema } from "@upcraft/contracts";
-import { consolidatedReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent, validateMedicalSources } from "../src/domain-qa.ts";
+import { consolidatedReviewIssues, validateClientAssetRights, validateClientStyleApproval, validateEngineeringContent } from "../src/domain-qa.ts";
 
 const sceneId = "22222222-2222-4222-8222-222222222222";
 const lineId = "33333333-3333-4333-8333-333333333333";
@@ -25,18 +25,6 @@ describe("engineering domain gate", () => {
   it("passes when the lesson states units, assumptions, and a calculation", () => {
     const text = "Assume the load is constant at 20 N, so the stress = 20 / 0.5 = 40 Pa";
     expect(validateEngineeringContent({ domain: "engineering", script: script(text), factPack: factPack(text), diagramLabels: ["stress = 40 Pa"] })).toEqual([]);
-  });
-});
-
-describe("medical source-quality gate", () => {
-  it("requires at least one authoritative clinical source", () => {
-    expect(validateMedicalSources({ domain: "medical", sources: [] }).map((issue) => issue.rule)).toContain("medical-sources-missing");
-    expect(validateMedicalSources({ domain: "medical", sources: [{ sourceUrl: "https://example.com/blog" }] }).map((issue) => issue.rule)).toContain("medical-source-authority");
-    expect(validateMedicalSources({ domain: "medical", sources: [{ sourceUrl: "https://www.nih.gov/study" }] })).toEqual([]);
-  });
-
-  it("is inert for non-medical domains", () => {
-    expect(validateMedicalSources({ domain: "standard", sources: [] })).toEqual([]);
   });
 });
 

@@ -13,7 +13,7 @@ Local, source-grounded educational-video generation with PostgreSQL as the durab
 
 Model routing lives in [`packages/providers/src/model-config.ts`](packages/providers/src/model-config.ts). Change one registry entry, or set one stage's environment override as a `provider/model` ref, to reroute a stage. The resolved route is frozen onto each stage checkpoint so a release record stays reproducible after an env change.
 
-A submission first creates a frozen input snapshot and database outbox record. If credentials are missing, preflight records a visible terminal failure. Set valid `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` before expecting an actual voice/render pipeline to proceed. Medical runs additionally require Clerk credentials and a clinician seeded with `npm run db:seed-clinician`.
+A submission first creates a frozen input snapshot and database outbox record. If credentials are missing, preflight records a visible terminal failure. Set valid `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` before expecting an actual voice/render pipeline to proceed. A user-supplied source is optional: when none is supplied, the `research-web` route retrieves authoritative pages and persists them as ordinary source documents. Medical topics are treated as standard educational topics with no special approval path.
 
 ## Pipeline architecture
 

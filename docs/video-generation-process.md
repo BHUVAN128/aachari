@@ -44,8 +44,8 @@ Run status is explicit: `queued`, `running`, `awaiting_approval`, `failed`, or `
 
 | Module | Locked inputs | Typed output | Gate | Token cost |
 | --- | --- | --- | --- | --- |
-| M1 Intake & routing | Request + one supplied source | `input-snapshot/v1` + run identity | Capability preflight | 0 (retained briefing agent is deferred) |
-| M2 Research & fact pack | Frozen snapshot + source snapshot | `source-evidence-map/v1`, `fact-pack/v2` | Claim-to-source completeness | 1 planning + 1 verifier call |
+| M1 Intake & routing | Request + optional supplied source | `intake-brief/v2` + `input-snapshot/v1` + run identity | Capability preflight | 1 briefing call |
+| M2 Research & fact pack | Frozen snapshot + source snapshot (web-retrieved when none supplied) | `source-evidence-map/v1`, `fact-pack/v2` | Claim-to-source completeness | 1 research-web call (source-less runs) + 1 planning + 1 verifier call |
 | M3 Lesson blueprint | Verified fact pack | `lesson-blueprint/v1` | Learning-objective coverage | 1 planning call |
 | M4 Script approval | Blueprint + fact pack | `approved-script/v2` | Independent script verification | 1 planning + 1 verifier call |
 | M5 Visual bible | Approved script | `visual-bible/v1` | Continuity/safe-area lock | 1 planning call |
@@ -60,17 +60,15 @@ Token costs are per successful run and exclude bounded retries. Tier B is the on
 
 ## §2 M1 Intake & routing — sequential
 
-Collect topic, target learner level, language, duration, aspect ratio, brand/style profile, and destination. Classify the domain as standard, engineering, medical, or client-production. Freeze this input, reserve the run/output identity, and fail early if required providers, credentials, storage, render capacity, or approval paths are unavailable.
+Collect topic, target learner level, language, duration, aspect ratio, brand/style profile, and destination from the user's request. The durable chat briefing agent extracts a typed `intake-brief/v2` from arbitrary free text; a user-supplied source is optional. Classify the domain as standard, engineering, or client-production. Freeze this input, reserve the run/output identity, and fail early if required providers, credentials, storage, render capacity, or approval paths are unavailable.
 
-A durable chat briefing agent that extracts a typed `intake-brief/v1` from a short request is **deferred/not required now**; a retained implementation exists but is not a release gate. The advanced form path (or a supplied brief) is authoritative.
-
-**Why:** a primary-school photosynthesis lesson and a medical-school pharmacology lesson cannot share the same source, safety, or review policy.
+**Why:** the brief is the deterministic projection that every downstream AI stage receives, so a level-, language-, and audience-appropriate lesson does not depend on mutable provider defaults. Medical topics are educational and are handled exactly as standard topics.
 
 ## §3 M2 Research & fact pack — sequential
 
-Retrieve authoritative, topic-appropriate sources. Extract only the facts, definitions, calculations, caveats, and citations required for the stated learning objective. Record material claim-to-source links, stable source locators or snapshots, retrieval time, and source suitability. Independently verify every material claim before planning.
+Retrieve authoritative, topic-appropriate sources. When the run was created without a user-supplied source, the `research-web` route performs paid web search and retrieval and persists the retrieved pages as ordinary `source_documents` rows with full provenance (source URL, retrieved URL, SHA-256, retrieval time). The user-supplied source is optional; the system, not the user, supplies the source when it is absent. Extract only the facts, definitions, calculations, caveats, and citations required for the stated learning objective. Record material claim-to-source links, stable source locators or snapshots, retrieval time, and source suitability. Independently verify every material claim before planning.
 
-**Why:** the script must be written from evidence, rather than asking a model to remember science or medicine from training data.
+**Why:** the script must be written from evidence, rather than asking a model to remember science or medicine from training data. Routing every run through the same locked-source/evidence-map path preserves reproducibility whether the source came from the user or from the web.
 
 ## §4 M3 Lesson blueprint — sequential
 
@@ -134,7 +132,7 @@ Approval may be scheduled only when both tiers have reported and no critical fin
 - schema validation and artifact completeness;
 - caption wording reconstruction from the locked word alignment, index integrity, line/word limits, safe-area containment, and contrast;
 - spatial-solve verification over `resolved-layout/v1` (containment, z-order, caption-panel overlap);
-- scene-asset completeness, render-asset availability, and domain-policy checks (engineering units/assumptions/calculations, medical source authority, client rights);
+- scene-asset completeness, render-asset availability, and domain-policy checks (engineering units/assumptions/calculations, client rights);
 - voice-alignment duration against the measured narration and render-integrity measured from the produced preview file (dimensions, duration, fps, frame count, audio track, codec).
 
 Every finding identifies the failed artifact, rule, evidence, and remediation.
@@ -147,7 +145,7 @@ Deep per-domain model QA branches (separate factual/pedagogy/visual/audio review
 
 ### Tier C — human approval (unchanged)
 
-The correct approval level is required. Medical lessons remain educational, not diagnostic or prescriptive, and **mandatory clinician approval is not weakened or automated** by the QA tiers. Any selected AI illustration still forces human approval for school/college publication.
+The correct approval level is required. Medical lessons are educational, not diagnostic or prescriptive, and are treated exactly as standard educational topics. Any selected AI illustration still forces human approval for school/college publication.
 
 **Why:** deterministic checks catch mechanical defects for free, one consolidated review catches semantic defects cheaply, and a human owns release.
 
@@ -182,7 +180,6 @@ These are explicitly out of the current release scope. Retained implementations 
 
 | Deferred module | Status |
 | --- | --- |
-| Chat intake briefing agent (`intake-brief/v1`) | Retained implementation; not a release gate. |
 | Sound plan / music-SFX (`sound-plan/v1`) | Deferred; narration remains intelligible without it. |
 | Multi-candidate illustration evaluation | Deferred; one candidate or a recorded omission is sufficient. |
 | AVIF variants | Deferred; generated raster illustrations are PNG-only. |

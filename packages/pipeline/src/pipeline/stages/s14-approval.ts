@@ -1,5 +1,5 @@
 /**
- * §11 M10 Tier C approval is a human/clinician gate, not a model stage. It is
+ * §11 M10 Tier C approval is a human gate, not a model stage. It is
  * handled directly by the executor (`processPipelineStage`) because the decision
  * is recorded through `approvals` and the run status transition, and because an
  * automated standard school/college release may advance without a handler.

@@ -49,3 +49,33 @@ export const generateIllustration = async (route: ModelRoute, prompt: string) =>
   if (!image?.data || !image.mimeType) throw new Error("Gemini image response did not include image bytes");
   return { bytes: Buffer.from(image.data, "base64"), mimeType: image.mimeType, usage: { requestId: result.responseId, model, inputTokens: result.usageMetadata?.promptTokenCount, cachedInputTokens: result.usageMetadata?.cachedContentTokenCount, outputTokens: result.usageMetadata?.candidatesTokenCount, reasoningTokens: result.usageMetadata?.thoughtsTokenCount, inputCharacters: prompt.length } };
 };
+
+/**
+ * Web-grounded research transport (the `research-web` capability). Uses the
+ * model's paid Google Search grounding tool and returns JSON, mirroring the
+ * thin sibling `verifyClaims`. Grounding metadata is reported through the
+ * provider usage snapshot so accounting stays uniform.
+ */
+export const searchGroundedText = async (route: ModelRoute, prompt: string): Promise<ProviderResult<Record<string, unknown>>> => {
+  const model = route.model;
+  const result = await generate(model, {
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    tools: [{ googleSearch: {} }],
+    generationConfig: { responseMimeType: "application/json" },
+  });
+  const text = result.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text;
+  if (!text) throw new Error("Gemini web-search response did not include JSON text");
+  return {
+    value: JSON.parse(text) as Record<string, unknown>,
+    usage: {
+      requestId: result.responseId,
+      model,
+      inputTokens: result.usageMetadata?.promptTokenCount,
+      cachedInputTokens: result.usageMetadata?.cachedContentTokenCount,
+      outputTokens: result.usageMetadata?.candidatesTokenCount,
+      reasoningTokens: result.usageMetadata?.thoughtsTokenCount,
+      inputCharacters: prompt.length,
+      outputCharacters: text.length,
+    },
+  };
+};

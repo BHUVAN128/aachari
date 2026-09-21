@@ -13,7 +13,6 @@
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
     "db:generate": "npm run db:generate --workspace=@upcraft/db",
     "db:migrate": "npm run db:migrate --workspace=@upcraft/db",
-    "db:seed-clinician": "npm run db:seed-clinician --workspace=@upcraft/db",
     "dev": "concurrently -k -n web,worker -c cyan,magenta \"npm run dev --workspace=@upcraft/web\" \"npm run dev --workspace=@upcraft/worker\"",
     "start": "npm run infra:up && npm run db:migrate && npm run dev",
     "build": "npm run build --workspaces --if-present",

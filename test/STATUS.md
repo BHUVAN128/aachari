@@ -50,3 +50,15 @@ to `packages/pipeline` at Phase 6.
 - [ ] `packages/*/test` regression suites pass
 - [ ] governing-doc updates committed in the same change
 - [ ] harness retained under `test/` as the sandbox
+
+## Smarter intake + web research + medical deprecation
+
+| Area | Regression | Status |
+| --- | --- | --- |
+| Intake v2 configuration extraction (duration expression, level, aspect ratio, selected-language preservation) | `packages/providers/test/intake-policy.test.ts` | [x] |
+| Web-research transport and provenance parsing | `packages/providers/test/websearch.test.ts` | [x] |
+| Source-less run → web source rows → valid evidence map | `packages/pipeline/test/research-web.test.ts` | [x] |
+| Research-web model route assertion | `packages/pipeline/test/model-route.test.ts` | [x] |
+| Medical domain/clinician removal (domain, DB, approvals, capabilities) | `packages/pipeline/test/domain-qa.test.ts`, `approvals-policy.test.ts` | [x] |
+
+s01 is intentionally untouched by this change (out of scope).

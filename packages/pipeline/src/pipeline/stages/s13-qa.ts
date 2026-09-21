@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { ApprovedScriptSchema, ConsolidatedReviewSchema, DiagramModelSchema, FactPackSchema, ProjectManifestSchema, ResolvedLayoutSchema, VisualBibleSchema, type WordTiming } from "@upcraft/contracts";
-import { getDb, mediaAssets, qaFindings, sourceDocuments } from "@upcraft/db";
+import { getDb, mediaAssets, qaFindings } from "@upcraft/db";
 import { getPrivateObject, resolveModelRoute, reviewWithRoute } from "@upcraft/providers";
 import { probeAudioDurationMs, probeLoudness, probeMedia, type MediaProbe } from "@upcraft/compositor";
 import { saveArtifact, requireContent } from "../../artifacts/store.ts";
@@ -40,11 +40,11 @@ const probePrivateMedia = async <T>(params: { objectKey: string; fileName: strin
  */
 export const runQa = async (ctx: StageContext): Promise<unknown> => {
   const { runId } = ctx;
-  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, sources, selectedAssetsArtifact, blueprintArtifact, bibleArtifact] = await Promise.all([
+  const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, selectedAssetsArtifact, blueprintArtifact, bibleArtifact] = await Promise.all([
     ctx.getArtifact(runId, "caption-timings"), ctx.getArtifact(runId, "project-manifest"), ctx.getArtifact(runId, "preview-render"),
     ctx.getArtifact(runId, "fact-pack"), ctx.getArtifact(runId, "approved-script"), ctx.getArtifact(runId, "resolved-layout"),
     getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
-    getRun(runId), getDb().select().from(sourceDocuments).where(eq(sourceDocuments.runId, runId)), ctx.getArtifact(runId, "selected-assets"),
+    getRun(runId), ctx.getArtifact(runId, "selected-assets"),
     ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "visual-bible"),
   ]);
   const captions = requireContent<{ words: WordTiming[]; cues: Array<{ wordIndexes: number[] }> }>(captionArtifact, "caption-timings");
@@ -116,7 +116,7 @@ export const runQa = async (ctx: StageContext): Promise<unknown> => {
       sceneCount: manifest.scenes.length, scriptSceneCount,
       assetIds: assets.map((asset) => asset.id),
       sceneAssetIds: manifest.scenes.map((scene) => scene.layers.find((layer) => layer.assetId)?.assetId),
-      ...(run && factPack && blueprint ? { domainPolicy: { domain: run.domain, script, factPack, blueprint, diagramLabels, sources: sources.map((source) => ({ sourceUrl: source.sourceUrl, retrievedAt: source.retrievedAt })), assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) } } : {}),
+      ...(run && factPack && blueprint ? { domainPolicy: { domain: run.domain, script, factPack, blueprint, diagramLabels, assets: assets.map((asset) => ({ role: asset.role, provenance: asset.provenance })) } } : {}),
     }),
     visualQa({ canvas, safeArea: manifest.safeArea, captions: manifest.captions, words: manifest.words, lockedTexts, allowedClaimIds, diagramModels, palette, area }),
     audioRenderQa({ words: manifest.words, narrationDurationMs, loudness: narrationLoudness, pronunciation: { narrationText: canonicalNarrationText(script), curatedTerms }, preview: previewProbe, expected: { durationMs: expectedDurationMs, width: canvas.width, height: canvas.height, fps: manifest.fps, frames: Math.ceil((expectedDurationMs / 1000) * manifest.fps), codec: "h264" } }),

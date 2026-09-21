@@ -17,7 +17,7 @@ import type { InputSnapshot, ModelRoute, QaFinding } from "@upcraft/contracts";
 
 export const runStatus = pgEnum("run_status", ["queued", "running", "awaiting_approval", "failed", "completed"]);
 export const intakeSessionStatus = pgEnum("intake_session_status", ["queued", "running", "failed", "completed"]);
-export const runDomain = pgEnum("run_domain", ["standard", "engineering", "medical", "client-production"]);
+export const runDomain = pgEnum("run_domain", ["standard", "engineering", "client-production"]);
 export const stageName = pgEnum("stage_name", [
   "preflight", "research", "fact-verification", "blueprint", "script", "visual-bible", "assets",
   "voiceover", "captions", "spatial-layout", "manifest", "preview-render", "qa", "approval",
@@ -217,21 +217,11 @@ export const qaFindings = pgTable("qa_findings", {
   createdAt: createdAt(),
 }, (table) => [index("qa_findings_run_idx").on(table.runId)]);
 
-export const clinicianApprovers = pgTable("clinician_approvers", {
-  id: id(),
-  clerkUserId: varchar("clerk_user_id", { length: 255 }).notNull(),
-  displayName: varchar("display_name", { length: 255 }).notNull(),
-  credentialReference: varchar("credential_reference", { length: 255 }).notNull(),
-  active: boolean("active").notNull().default(true),
-  createdAt: createdAt(),
-}, (table) => [uniqueIndex("clinician_approvers_clerk_idx").on(table.clerkUserId)]);
-
 export const approvals = pgTable("approvals", {
   id: id(),
   runId: uuid("run_id").notNull().references(() => videoRuns.id, { onDelete: "cascade" }),
   decision: approvalDecision("decision").notNull(),
   reviewerId: varchar("reviewer_id", { length: 255 }).notNull(),
-  clinicianApproverId: uuid("clinician_approver_id").references(() => clinicianApprovers.id),
   notes: text("notes").notNull().default(""),
   createdAt: createdAt(),
 }, (table) => [index("approvals_run_idx").on(table.runId)]);

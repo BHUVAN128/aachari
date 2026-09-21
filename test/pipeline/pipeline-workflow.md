@@ -26,15 +26,16 @@ and must be re-checked against those files whenever a route or stage changes.
 Stage aliases (`s01`–`s16`) are declared in
 [`STAGE_COMMAND_ALIASES`](setup/run-stage.ts).
 
-## Model inventory (7 coded routes)
+## Model inventory (8 coded routes)
 
 | Capability (coded) | Model | Provider | Env key | Default model ID | Pricing | Fallback / policy |
 | --- | --- | --- | --- | --- | --- | --- |
-| `intake-brief` | GPT-5.6 Luna | `ai-gateway` | `INTAKE_BRIEF_MODEL` | `openai/gpt-5.6-luna` | — | Deferred pre-run route; not a release gate. Gateway transport; no override provider. |
+| `intake-brief` | GPT-5.6 Luna | `ai-gateway` | `INTAKE_BRIEF_MODEL` | `openai/gpt-5.6-luna` | — | Toolless pre-run route that extracts `intake-brief/v2`; gateway transport; no override provider. |
 | `planning` | GPT-5.6 Terra | `openai` | `OPENAI_PLANNING_MODEL` | `gpt-5.6-terra` | 2 / 12 µ$ per input/output token | Fallback `openai/gpt-5.6-sol`. |
 | `fact-verification` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
 | `script-verification` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
 | `qa-review` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
+| `research-web` | Gemini 3.8 Flash | `gemini` | `GEMINI_RESEARCH_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Paid Google Search grounding for source-less runs; fallback `openai/gpt-5.6-terra`. |
 | `illustration` | Gemini 3.1 Flash Image | `gemini` | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` | — | Policy `outputMime: image/png`. No coded fallback. |
 | `narration` | ElevenLabs v2 Multilingual | `elevenlabs` | `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | Character rate via `ELEVENLABS_COST_MICRODOLLARS_PER_1K_CHARS` | One consistent voice + alignment timestamps. |
 
@@ -45,12 +46,12 @@ a model:
   arrows, and captions. Deterministic, 0 tokens, 0 image cost.
 - **Open-weight side path** — `gpt-oss-20b` / `gpt-oss-safeguard-20b` for
   private/offline drafting and safety classification. Apache 2.0; not a factual
-  or medical authority and not a coded stage route.
+  authority and not a coded stage route.
 
 Provider escalation options named in `model-recommendations.md` but not coded as
 routes today: Gemini 3 Pro Image (premium art direction), Gemini 3.1 Flash Lite
 Image (simple high-volume decorative visuals), and GPT-5.6 Sol (difficult
-high-stakes review / medical assistance). Selecting any of these is a routing
+high-stakes review). Selecting any of these is a routing
 decision governed by change control, not an env override default.
 
 ## Stage-by-stage map (s01–s16)
@@ -63,8 +64,9 @@ are from `video-generation-process.md` §1.
 
 - **Model route:** none (`null`). Deterministic capability/storage preflight.
 - **AI work:** none. Reserves run identity, freezes the input snapshot, asserts
-  required providers/credentials/storage/render/approval capabilities, emits
-  `capability-report/v1`.
+  required providers/credentials/storage/render capabilities, emits
+  `capability-report/v1`. The Intake Briefing Agent runs before the run and
+  extracts the full configuration as `intake-brief/v2`; a user source is optional.
 - **Benchmarks / gate:** Run integrity and Intake durability/provenance —
   100% of required records present; 0 unclassified terminal states. Input routing
   — 100% on the routing regression set.
@@ -72,12 +74,18 @@ are from `video-generation-process.md` §1.
 ### s02 `research` — M2 Research & fact pack
 
 - **Model route:** `planning` → `openai/gpt-5.6-terra` (`OPENAI_PLANNING_MODEL`).
+  Source-less runs first call `research-web` → `gemini/gemini-3.8-flash`
+  (`GEMINI_RESEARCH_MODEL`) with paid Google Search grounding.
 - **AI work:** one planning call turns the frozen source snapshot into a
-  `fact-pack/v2` with material claim-to-source links. `source-evidence-map/v1` is
-  deterministic (sentence-aware segmentation with marked overlap).
+  `fact-pack/v2` with material claim-to-source links. When the run has no source,
+  `research-web` retrieves 2-4 authoritative pages, applies deterministic
+  HTTPS/length/dedupe checks, and persists them as ordinary `source_documents`
+  with full provenance. `source-evidence-map/v1` is deterministic (sentence-aware
+  segmentation with marked overlap).
 - **Benchmarks / gate:** Research — 100% cited material claims; no unsupported
-  high-stakes claim. Usage/context accounting — 100% of provider attempts
-  accounted for.
+  high-stakes claim. Web source provenance — 100% of web-sourced runs have
+  fully-provenanced source rows. Usage/context accounting — 100% of provider
+  attempts accounted for.
 
 ### s03 `fact-verification` — M2 verification
 
@@ -103,17 +111,16 @@ are from `video-generation-process.md` §1.
 ### s05 `script` — M4 Script approval
 
 - **Model route:** `planning` → `openai/gpt-5.6-terra` writes; `script-verification`
-  → `gemini/gemini-3.8-flash` independently verifies. Medical escalation policy
-  names GPT-5.6 Sol plus mandatory clinician approval; a clinician is never
-  replaced by a model.
+  → `gemini/gemini-3.8-flash` independently verifies. The writer receives a
+  deterministic projection of the frozen snapshot (learner level, audience,
+  language, duration budget).
 - **AI work:** narration lines are written from the fact pack, each attached to a
   scene purpose, on-screen text, visual action, and source claims, then verified
   line by line. Emits `approved-script/v2` (canonical narration text; TTS text is
   derived deterministically downstream). Rejections use the same bounded loop as
   s03; `pauseMs` carries the visual-pacing budget.
 - **Benchmarks / gate:** Script accuracy — 100% on critical claims; ≥ 95% overall
-  supported claims. Medical safety — clinician approval mandatory; never
-  auto-publish.
+  supported claims.
 
 ### s06 `visual-bible` — M5 Visual bible
 
@@ -205,10 +212,9 @@ are from `video-generation-process.md` §1.
 
 - **Model route:** none (`null`). Executor-owned; the QA stage advances it.
 - **AI work:** none. Automatic standard school/college release after automated
-  gates pass; **any selected AI illustration forces human review**, and medical
-  content requires clinician approval.
+  gates pass; **any selected AI illustration forces human review**.
 - **Benchmarks / gate:** Tier C — 100% of approved runs have the required
-  approval; 0 automatic medical publication.
+  approval.
 
 ### s15 `final-render` — M11 Final render
 
@@ -238,7 +244,6 @@ on the task-specific gates above.
 | --- | --- | --- |
 | Text reasoning (s02, s04, s05, s06) | Artificial Analysis Intelligence Index | Shortlist text models; compare quality, latency, and price. |
 | Explanation quality (s05) | LMArena | Tie-breaker for voice, clarity, and writing; never a factuality gate. |
-| Medical candidates (s05 medical path) | HealthBench | Required signal alongside the clinician review set. |
 | Visuals (s07) | Artificial Analysis Image Arena | Shortlist visual models; validate continuity on our own storyboards. |
 | TTS (s08) | Internal listening and pronunciation suite | Select by naturalness, pronunciation, timing, and language support; no sufficient universal public TTS leaderboard. |
 
@@ -253,7 +258,7 @@ on the task-specific gates above.
   charts, arrows, and captions are typed SVG/Remotion components with all factual
   meaning computed deterministically.
 - **QA tiering is fixed.** Tier A = zero tokens; Tier B = exactly one
-  consolidated verifier call; Tier C = human/clinician and never delegated to a
+  consolidated verifier call; Tier C = human and never delegated to a
   model. Do not add per-domain QA reviewers until measured findings justify it.
 - **Fallback is a new recorded attempt only.** A fallback must satisfy the same
   stage contract and gate, create a new attempt, and undergo the same validation

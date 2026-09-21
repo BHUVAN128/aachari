@@ -9,7 +9,6 @@ import {
   consolidatedReviewIssues,
   validateClientAssetRights,
   validateEngineeringContent,
-  validateMedicalSources,
 } from "./domain-qa.ts";
 import type {
   ApprovedScript,
@@ -49,7 +48,6 @@ const domainPolicyIssues = (input: StructuralQaInput["domainPolicy"]): QaIssue[]
   if (!input) return [];
   return [
     ...validateEngineeringContent({ domain: input.domain, script: input.script, factPack: input.factPack, diagramLabels: input.diagramLabels }),
-    ...validateMedicalSources({ domain: input.domain, sources: input.sources }),
     ...validateClientAssetRights({ domain: input.domain, assets: input.assets }),
   ];
 };
@@ -70,7 +68,6 @@ export type StructuralQaInput = {
     factPack: FactPack;
     blueprint: { objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> };
     diagramLabels: string[];
-    sources: Array<{ sourceUrl: string | null; retrievedAt: Date | null }>;
     assets: Array<{ role: string; provenance: Record<string, unknown> | null }>;
   };
 };

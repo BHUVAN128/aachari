@@ -1,7 +1,7 @@
 import type { Domain, ModelCapability } from "@upcraft/contracts";
 import { MODEL_ROUTES, requiredCredentials, resolveModelRoute } from "./model-config.ts";
 
-export type Capability = "intake" | "planning" | "verification" | "illustration" | "voice" | "storage" | "renderer" | "medical-approval";
+export type Capability = "intake" | "planning" | "verification" | "research" | "illustration" | "voice" | "storage" | "renderer";
 
 export type CapabilityResult = { capability: Capability; available: boolean; reason?: string | undefined; model?: string | undefined };
 
@@ -12,6 +12,7 @@ const MODEL_CAPABILITY: Partial<Record<Capability, ModelCapability>> = {
   intake: "intake-brief",
   planning: "planning",
   verification: "fact-verification",
+  research: "research-web",
   illustration: "illustration",
   voice: "narration",
 };
@@ -32,11 +33,11 @@ export const resolveCapabilities = (domain: Domain, env?: NodeJS.ProcessEnv): Ca
   modelCredentialResult("intake", MODEL_CAPABILITY.intake!, env),
   modelCredentialResult("planning", MODEL_CAPABILITY.planning!, env),
   modelCredentialResult("verification", MODEL_CAPABILITY.verification!, env),
+  modelCredentialResult("research", MODEL_CAPABILITY.research!, env),
   modelCredentialResult("illustration", MODEL_CAPABILITY.illustration!, env),
   modelCredentialResult("voice", MODEL_CAPABILITY.voice!, env),
   { capability: "storage", available: has("S3_ENDPOINT") && has("S3_BUCKET") && has("S3_ACCESS_KEY_ID") && has("S3_SECRET_ACCESS_KEY"), reason: "S3 storage variables are required" },
   { capability: "renderer", available: has("RENDER_OUTPUT_DIR"), reason: "RENDER_OUTPUT_DIR is required" },
-  { capability: "medical-approval", available: domain !== "medical" || (has("CLERK_SECRET_KEY") && has("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")), reason: "Clerk keys are required for medical approval" },
 ];
 
 /** The model ref shown for a capability, never a secret value. */
@@ -46,8 +47,8 @@ export const resolvedModelRef = (capability: ModelCapability, env?: NodeJS.Proce
 export const modelEnvKey = (capability: ModelCapability) => MODEL_ROUTES[capability].envKey;
 
 export const assertCapabilities = (domain: Domain) => {
-  const requiredCapabilities: Capability[] = ["planning", "verification", "voice", "storage", "renderer"];
-  if (domain === "medical") requiredCapabilities.push("medical-approval");
+  const requiredCapabilities: Capability[] = ["planning", "verification", "research", "voice", "storage", "renderer"];
+  void domain;
   const missing = resolveCapabilities(domain).filter((capability) => requiredCapabilities.includes(capability.capability) && !capability.available);
   if (missing.length) {
     throw new Error(`Capability preflight failed: ${missing.map((capability) => capability.capability).join(", ")}. ${missing.map((capability) => capability.reason).join(" ")}`);

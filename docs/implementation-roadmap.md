@@ -15,10 +15,10 @@ the specified regression evidence are present.
   equality, duplicate-media replay, crash-mid-stage recovery, and
   invalid-artifact-regeneration feedback).
 - [~] Phase 1 — test harness: unit tests, a PostgreSQL lease integration test,
-  deterministic Intake Brief policy fences (selected language and conservative
-  medical routing), source-URL HTTPS/content-type policy, provider
+  deterministic Intake Brief policy fences (selected language preservation and
+  full configuration extraction), source-URL HTTPS/content-type policy, provider
   transient-vs-permanent failure classification, stale-evidence rejection,
-  approval policy (blocked medical publication), claim/script verification
+  approval policy, claim/script verification
   completeness and support reducers (source-verification failure), and
   optional-asset fallback decisions now exist. Deterministic text-layer PDF
   extraction (byte/character limits plus raw-byte hash) has regression coverage.
@@ -55,10 +55,10 @@ the specified regression evidence are present.
   `regression-fixture/v1` records (`feedback-regression.ts`, the
   `feedback:fixtures` script, and a DB-backed integration test).
 - [x] Phase 5 — domain policy gates: engineering lessons must state units,
-  assumptions, and calculation steps; medical lessons must cite at least one
-  authoritative clinical source (clinician approval remains the release
-  authority); client-production work requires a rights/provenance record for
-  every asset and an explicit client style approval before release.
+  assumptions, and calculation steps; client-production work requires a
+  rights/provenance record for every asset and an explicit client style approval
+  before release. Medical topics are treated exactly as standard educational
+  topics and carry no special gate.
 - [~] Phase 3 — optional illustration candidates and sound plan: the visual
   bible's persistent entities drive a deterministic per-scene illustration
   decision (recorded omission or candidate), candidates are generated behind
@@ -88,6 +88,18 @@ the specified regression evidence are present.
   and multi-aspect variants. Deep per-domain model QA branches are deferred
   until Tier B findings justify them.
 
+- [x] Smarter LLM intake and configuration propagation — `intake-brief/v2` adds
+  `aspectRatio` and `requestedDestination`; the Intake Briefing Agent extracts the
+  full video configuration from arbitrary free text (duration expressions, learner
+  level, audience, language, aspect ratio, visual style, destination) and every
+  AI-consuming stage (research, blueprint, script, visual bible) prepends a
+  deterministic projection of the frozen snapshot. Source-less runs retrieve
+  authoritative pages through the `research-web` route and persist them as ordinary
+  source documents with full provenance (URL, retrieved URL, SHA-256, retrieval
+  time), with deterministic HTTPS/length/dedupe quality checks. The medical domain,
+  its source/QA gate, clinician approval, Clerk gate, and clinician database were
+  removed; medical topics are treated exactly as standard educational topics.
+
 ## Remaining implementation order
 
 1. [x] Complete Phase 0/1 evidence: crash-mid-stage recovery, duplicate media
@@ -116,7 +128,7 @@ the specified regression evidence are present.
    duration, render integrity, provenance, and pre-render asset fencing are
    implemented; loudness/pronunciation gates and multi-format (SRT plus
    resolution-variant) renders are implemented.
-6. [x] Add engineering, medical-source-quality, and client rights/style gates.
+6. [x] Add engineering and client rights/style gates.
 7. [x] Wire the spatial solver into layout/composition, then add feedback
    ingestion and the accepted-video cost-baseline workflow. Feedback ingestion,
    the cost baseline, and solver-based layout are implemented.

@@ -2,10 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { unstable_rethrow } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
 import { CreateRunInputSchema } from "@upcraft/contracts";
-import { clinicianApprovers, getDb } from "@upcraft/db";
 import { approveRun, createVideoRun } from "@upcraft/pipeline";
 
 export type FormState = { error?: string };
@@ -27,16 +24,6 @@ export const createRunAction = async (_previous: FormState, formData: FormData):
   }
 };
 
-export const approveRunAction = async (runId: string, domain: string) => {
-  let reviewerId = "local-operator";
-  let clinicianApproverId: string | undefined;
-  if (domain === "medical") {
-    const { userId } = await auth();
-    if (!userId) throw new Error("A Clerk-authenticated clinician is required to approve medical content.");
-    const clinician = await getDb().query.clinicianApprovers.findFirst({ where: eq(clinicianApprovers.clerkUserId, userId) });
-    if (!clinician?.active) throw new Error("The signed-in account is not an approved clinician.");
-    reviewerId = clinician.id;
-    clinicianApproverId = clinician.id;
-  }
-  await approveRun(runId, clinicianApproverId ? { reviewerId, clinicianApproverId } : { reviewerId });
+export const approveRunAction = async (runId: string) => {
+  await approveRun(runId, { reviewerId: "local-operator" });
 };

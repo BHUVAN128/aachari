@@ -11,6 +11,5 @@ The repository-level [agent instructions](../AGENTS.md) make these policies mand
 Additional implementation note:
 
 - [React-to-MP4 rendering and deterministic spatial compositing](react-code-to-video.md) — reference-repository analysis and a non-governing design for headless rendering, audio/caption alignment, and constraint-based image layering.
-- [Source-grounded lesson planning and structured scene manifests](source-grounded-lesson-planning.md) — implementation-backed walkthrough of what the planning job creates and forwards, with a worked photosynthesis example.
 
 All documentation and code in this repository are proprietary to Upcraft Solutions Private Limited. See [LICENSE](../LICENSE), [CONTRIBUTING](../CONTRIBUTING.md), and [AUTHORS](../AUTHORS.md).

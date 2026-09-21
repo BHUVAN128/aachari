@@ -98,6 +98,16 @@ export const MODEL_ROUTES: Record<ModelCapability, ModelRouteSpec> = {
     pricing: { inputMicrounitsPerToken: 0.75, outputMicrounitsPerToken: 3.75 },
     fallback: { provider: "openai", model: "gpt-5.6-terra" },
   },
+  "research-web": {
+    capability: "research-web",
+    provider: "gemini",
+    envKey: "GEMINI_RESEARCH_MODEL",
+    defaultModel: "gemini-3.8-flash",
+    credentialEnv: ["GEMINI_API_KEY"],
+    transport: "native",
+    pricing: { inputMicrounitsPerToken: 0.75, outputMicrounitsPerToken: 3.75 },
+    fallback: { provider: "openai", model: "gpt-5.6-terra" },
+  },
   illustration: {
     capability: "illustration",
     provider: "gemini",
