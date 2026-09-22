@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import type { CreateRunInput, SourceInput } from "@upcraft/contracts";
+import type { CreateRunInput, Domain, SourceInput } from "@upcraft/contracts";
 
 /**
  * Named mock inputs for the step harness. Each entry is a frozen, local source
@@ -22,7 +22,8 @@ export type HarnessInput = {
   topic: string;
   learningLevel: string;
   audienceCategory: "school" | "college" | "other";
-  domain: "standard" | "engineering" | "medical" | "client-production";
+  /** Only the approved domain set; medical topics are standard, not a domain. */
+  domain: Domain;
   durationSeconds: number;
   visualProfile: string;
   sourceFile: string;
@@ -54,7 +55,7 @@ export const HARNESS_INPUTS: Record<HarnessInputName, HarnessInput> = {
     topic: "Beta-adrenergic blockers (educational overview)",
     learningLevel: "Medical school, years 1-2",
     audienceCategory: "college",
-    domain: "medical",
+    domain: "standard",
     durationSeconds: 180,
     visualProfile: "clean clinical teaching whiteboard",
     sourceFile: "medical-adjacent.txt",

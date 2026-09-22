@@ -8,7 +8,11 @@
       "@upcraft/contracts": ["../../packages/contracts/src/index.ts"],
       "@upcraft/db": ["../../packages/db/src/index.ts"],
       "@upcraft/providers": ["../../packages/providers/src/index.ts"],
+      "@upcraft/providers/intake": ["../../packages/providers/src/intake.ts"],
+      "@upcraft/providers/model-config": ["../../packages/providers/src/model-config.ts"],
+      "@upcraft/providers/usage": ["../../packages/providers/src/usage.ts"],
       "@upcraft/pipeline": ["../../packages/pipeline/src/index.ts"],
+      "@upcraft/pipeline/intake": ["../../packages/pipeline/src/intake.ts"],
       "@upcraft/pipeline/pipeline": ["../../packages/pipeline/src/pipeline/index.ts"],
       "@upcraft/pipeline/stages": ["../../packages/pipeline/src/stages.ts"],
       "@upcraft/pipeline/spatial": ["../../packages/pipeline/src/spatial.ts"]

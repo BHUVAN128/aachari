@@ -1,6 +1,7 @@
 import { HARNESS_INPUTS, type HarnessInputName } from "./inputs.ts";
 import { prepareHarness } from "./stage-context.ts";
 import { runStage } from "./runner.ts";
+import { runIntakeHarness } from "./intake-runner.ts";
 import type { StageName } from "@upcraft/contracts";
 
 /**
@@ -39,7 +40,13 @@ const parseArgs = (argv: string[]) => {
 
 const main = async () => {
   const { stageArg, input } = parseArgs(process.argv.slice(2));
-  if (!stageArg) throw new Error(`Usage: run-stage.ts <s01..s16|stage-name> --input <${Object.keys(HARNESS_INPUTS).join("|")}>`);
+  if (!stageArg) throw new Error(`Usage: run-stage.ts <s00..s16|stage-name> --input <${Object.keys(HARNESS_INPUTS).join("|")}>`);
+  // s00-intake is a pre-run step: it does not use the stage DB/MinIO resources.
+  if (stageArg === "s00" || stageArg === "intake" || stageArg === "s00-intake") {
+    const result = await runIntakeHarness({ requestText: HARNESS_INPUTS[input].topic, language: "en" });
+    console.log(`[s00-intake] ${result.status}${result.failureMessage ? `: ${result.failureMessage}` : ""}`);
+    process.exit(result.status === "failed" ? 1 : 0);
+  }
   const stage = STAGE_COMMAND_ALIASES[stageArg] ?? (stageArg as StageName);
   await prepareHarness();
   const result = await runStage({ stage, input, allowBlocked: true });

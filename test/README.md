@@ -50,6 +50,8 @@ test/
     │   ├── stage-context.ts  wires DATABASE_URL / S3 / render dir to harness resources
     │   ├── context-builder.ts builds a real StageContext
     │   ├── runner.ts         runStage() with visible blocked/failed semantics
+    │   ├── intake-runner.ts  runIntakeHarness() for the pre-run s00 intake step
+    │   ├── intake-hardening/ s00 sandbox modules (defaults, projection, domain-routing, retry-policy, usage)
     │   ├── run-stage.ts      CLI: node test/pipeline/setup/run-stage.ts s02 --input photosynthesis
     │   ├── run-all.ts        chained combine run over green steps
     │   ├── inputs.ts         named mock inputs + run input builder
@@ -64,6 +66,10 @@ test/
 
 ## How to run
 ```bash
+# pre-run intake step (no DB/MinIO needed; blocked visibly without a gateway key)
+node test/pipeline/steps/s00-intake/test.ts
+node test/pipeline/setup/run-stage.ts s00 --input photosynthesis
+
 # one step, one input
 node test/pipeline/setup/run-stage.ts s02 --input photosynthesis
 

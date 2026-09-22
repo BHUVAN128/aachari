@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "intake-brief/v2",
+  "checks": [
+    { "path": "topic", "assert": "non-empty-string" },
+    { "path": "learningLevel", "assert": "non-empty-string" },
+    { "path": "domain", "assert": "non-empty-string" },
+    { "path": "audienceCategory", "assert": "non-empty-string" },
+    { "path": "durationSeconds", "assert": "number" },
+    { "path": "language", "assert": "non-empty-string" },
+    { "path": "visualProfile", "assert": "non-empty-string" },
+    { "path": "aspectRatio", "assert": "non-empty-string" },
+    { "path": "requestedDestination", "assert": "non-empty-string" }
+  ]
+}

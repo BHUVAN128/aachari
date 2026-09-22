@@ -7,6 +7,7 @@ expected outcome sequence from a real, unblocked run, and its `test.ts` passes.
 
 | # | Step | Assertions | Live run |
 | --- | --- | --- | --- |
+| s00 | intake-hardening | code-owned defaults; bounded context projection; domain-validation fallback; classified retry+backoff; pricing stamping; medical-as-standard input | [ ] |
 | s01 | preflight | capability report emitted; missing credentials fail visibly | [ ] |
 | s02 | research | lossless evidence map; fact-pack schema/contract; claims cite locked segments | [x] |
 | s03 | fact-verification | verifier rejects once then accepts (WF2); exhaustion fails visibly | [ ] |
@@ -62,3 +63,19 @@ to `packages/pipeline` at Phase 6.
 | Medical domain/clinician removal (domain, DB, approvals, capabilities) | `packages/pipeline/test/domain-qa.test.ts`, `approvals-policy.test.ts` | [x] |
 
 s01 is intentionally untouched by this change (out of scope).
+
+## Intake hardening (s00 — sandbox, pre-run)
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| 1A broken medical-adjacent input | `setup/inputs.ts` | [x] | n/a | n/a (harness-only) |
+| 1B code-owned defaults | `setup/intake-hardening/defaults.ts` | [x] | [ ] | [ ] |
+| 1C bounded context projection | `setup/intake-hardening/projection.ts` | [x] | [ ] | [ ] |
+| 1D domain-validation fallback | `setup/intake-hardening/domain-routing.ts` | [x] | [ ] | [ ] |
+| 1E classified retry + backoff | `setup/intake-hardening/retry-policy.ts` | [x] | [ ] | [ ] |
+| 1F usage/pricing stamping | `setup/intake-hardening/usage.ts` | [x] | [ ] | [ ] |
+| 1G payload hygiene (no `sourceIds`) | `setup/intake-runner.ts` | [x] | n/a | [ ] |
+
+Phase 2 (complexity extraction, safety moderation gate, domain taxonomy
+expansion) changes governing policy and is **not started** pending explicit user
+approval (see `steps/s00-intake/NOTES.md`).

@@ -29,3 +29,23 @@ Read all three before designing, changing, reviewing, or running the educational
 ## Repository boundaries
 
 `reference/` contains third-party source checkouts for inspection only. It is not part of this product repository, must remain unmodified, and must not be committed as Upcraft Solutions Private Limited IP.
+
+## Development phase and scope boundaries
+
+The repository is currently in a **trial-and-error development phase**. The active
+development surface is `test/pipeline/` (the step harness described in
+[`test/README.md`](test/README.md) and tracked in [`test/STATUS.md`](test/STATUS.md)).
+
+- Harden, prototype, and iterate on pipeline behavior inside `test/pipeline/`
+  first. Sandbox-local schemas, policies, and gap-fix modules live there and are
+  proven by deterministic harness tests before any promotion.
+- Do **not** modify `apps/`, `packages/`, `infra/`, `scripts/`, or the governing
+  documents in `docs/` without asking the user first and receiving explicit
+  approval for that exact change. Reading and inspecting them is always allowed.
+- Promotion of a proven sandbox module into `packages/` is a separate, explicit
+  user-approved change that must carry its regression tests and any governing-doc
+  updates in the same change (see the Phase-6 promotion criteria in
+  [`test/README.md`](test/README.md)).
+- `reference/` remains inspection-only, as stated above.
+- `test/` is never part of a production build; production modules must never
+  import from `test/`.
