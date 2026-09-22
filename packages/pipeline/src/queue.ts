@@ -35,8 +35,12 @@ export const getPipelineQueue = () => {
 export const enqueueStage = async (runId: string, stage: StageName, dispatchKey = "initial") =>
   getPipelineQueue().add(stage, { runId, stage, dispatchKey }, { jobId: `${runId}--${stage}--${dispatchKey}`, removeOnComplete: 1_000 });
 
-export const enqueueIntakeSession = async (sessionId: string) =>
-  getPipelineQueue().add("intake", { sessionId }, { jobId: `intake--${sessionId}`, removeOnComplete: 1_000 });
+export const enqueueIntakeSession = async (sessionId: string, options: { delayMs?: number; jobId?: string } = {}) =>
+  getPipelineQueue().add("intake", { sessionId }, {
+    jobId: options.jobId ?? `intake--${sessionId}`,
+    ...(options.delayMs ? { delay: options.delayMs } : {}),
+    removeOnComplete: 1_000,
+  });
 
 export const publishRunSignal = async (runId: string) => {
   await getQueueConnection().publish(`run:${runId}`, String(Date.now()));

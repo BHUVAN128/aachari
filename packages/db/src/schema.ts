@@ -17,7 +17,7 @@ import type { InputSnapshot, ModelRoute, QaFinding } from "@upcraft/contracts";
 
 export const runStatus = pgEnum("run_status", ["queued", "running", "awaiting_approval", "failed", "completed"]);
 export const intakeSessionStatus = pgEnum("intake_session_status", ["queued", "running", "failed", "completed"]);
-export const runDomain = pgEnum("run_domain", ["standard", "engineering", "client-production"]);
+export const runDomain = pgEnum("run_domain", ["standard", "engineering", "client-production", "stem", "humanities", "legal-compliance", "business"]);
 export const stageName = pgEnum("stage_name", [
   "preflight", "research", "fact-verification", "blueprint", "script", "visual-bible", "assets",
   "voiceover", "captions", "spatial-layout", "manifest", "preview-render", "qa", "approval",

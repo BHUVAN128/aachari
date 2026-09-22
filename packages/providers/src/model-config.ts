@@ -55,6 +55,17 @@ export const MODEL_ROUTES: Record<ModelCapability, ModelRouteSpec> = {
     transport: "gateway",
     pricing: null,
   },
+  // Approved open-weight safety-classification job (docs/model-recommendations.md).
+  // Runs before the billable briefing call; the same gateway credential gates it.
+  "safety-classification": {
+    capability: "safety-classification",
+    provider: "ai-gateway",
+    envKey: "INTAKE_SAFETY_MODEL",
+    defaultModel: "openai/gpt-oss-safeguard-20b",
+    credentialEnv: ["AI_GATEWAY_API_KEY"],
+    transport: "gateway",
+    pricing: null,
+  },
   planning: {
     capability: "planning",
     provider: "openai",

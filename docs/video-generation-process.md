@@ -44,7 +44,7 @@ Run status is explicit: `queued`, `running`, `awaiting_approval`, `failed`, or `
 
 | Module | Locked inputs | Typed output | Gate | Token cost |
 | --- | --- | --- | --- | --- |
-| M1 Intake & routing | Request + optional supplied source | `intake-brief/v2` + `input-snapshot/v1` + run identity | Capability preflight | 1 briefing call |
+| M1 Intake & routing | Request + optional supplied source | `intake-brief/v3` (extraction, normalized to a complete brief) + `input-snapshot/v1` + run identity | Safety gate + capability preflight | 1 safety-classification call + 1 briefing call |
 | M2 Research & fact pack | Frozen snapshot + source snapshot (web-retrieved when none supplied) | `source-evidence-map/v1`, `fact-pack/v2` | Claim-to-source completeness | 1 research-web call (source-less runs) + 1 planning + 1 verifier call |
 | M3 Lesson blueprint | Verified fact pack | `lesson-blueprint/v1` | Learning-objective coverage | 1 planning call |
 | M4 Script approval | Blueprint + fact pack | `approved-script/v2` | Independent script verification | 1 planning + 1 verifier call |
@@ -60,9 +60,9 @@ Token costs are per successful run and exclude bounded retries. Tier B is the on
 
 ## §2 M1 Intake & routing — sequential
 
-Collect topic, target learner level, language, duration, aspect ratio, brand/style profile, and destination from the user's request. The durable chat briefing agent extracts a typed `intake-brief/v2` from arbitrary free text; a user-supplied source is optional. Classify the domain as standard, engineering, or client-production. Freeze this input, reserve the run/output identity, and fail early if required providers, credentials, storage, render capacity, or approval paths are unavailable.
+Collect topic, target learner level, language, duration, aspect ratio, brand/style profile, and destination from the user's request. First run a content-moderation gate over a bounded projection of the request: the approved open-weight safety-classification route rejects unsafe or review-required requests before any billable call or run identity, and a safety rejection is terminal and is never retried. Then the durable chat briefing agent extracts a typed `intake-brief/v3` from arbitrary free text; a user-supplied source is optional, and only the bounded projection is sent to the lightweight briefing call. Fields the user did not state are null and code owns the defaults, and the agent records a bounded topic-complexity assessment that derives a duration when the user gave none. Classify the domain as standard, engineering, client-production, stem, humanities, legal-compliance, or business; a deterministic keyword check validates the classification and records any override before the input is frozen. Freeze this input, reserve the run/output identity, and fail early if required providers, credentials, storage, render capacity, or approval paths are unavailable.
 
-**Why:** the brief is the deterministic projection that every downstream AI stage receives, so a level-, language-, and audience-appropriate lesson does not depend on mutable provider defaults. Medical topics are educational and are handled exactly as standard topics.
+**Why:** the brief is the deterministic projection that every downstream AI stage receives, so a level-, language-, and audience-appropriate lesson does not depend on mutable provider defaults. Code, not the prompt, owns default configuration, duration derivation, and domain validation, so changing a default or routing policy is a deterministic code change. Medical topics are educational and are handled exactly as standard topics; there is no medical domain.
 
 ## §3 M2 Research & fact pack — sequential
 

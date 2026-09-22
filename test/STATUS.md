@@ -69,18 +69,20 @@ s01 is intentionally untouched by this change (out of scope).
 | Item | Where it lives now | Deterministic tests | Live | Promoted |
 | --- | --- | --- | --- | --- |
 | 1A broken medical-adjacent input | `setup/inputs.ts` | [x] | n/a | n/a (harness-only) |
-| 1B code-owned defaults | `setup/intake-hardening/defaults.ts` | [x] | [ ] | [ ] |
-| 1C bounded context projection | `setup/intake-hardening/projection.ts` | [x] | [ ] | [ ] |
-| 1D domain-validation fallback | `setup/intake-hardening/domain-routing.ts` | [x] | [ ] | [ ] |
-| 1E classified retry + backoff | `setup/intake-hardening/retry-policy.ts` | [x] | [ ] | [ ] |
-| 1F usage/pricing stamping | `setup/intake-hardening/usage.ts` | [x] | [ ] | [ ] |
-| 1G payload hygiene (no `sourceIds`) | `setup/intake-runner.ts` | [x] | n/a | [ ] |
-| 2A complexity + derived duration (approved) | `setup/intake-hardening/complexity.ts` | [x] | [ ] | [ ] |
-| 2B content moderation gate (approved) | `setup/intake-hardening/safety.ts` | [x] | [ ] | [ ] |
-| 2C domain taxonomy expansion (approved) | `setup/intake-hardening/domain-taxonomy.ts` | [x] | [ ] | [ ] |
+| 1B code-owned defaults | `packages/pipeline/src/intake-normalize.ts` | [x] | [ ] | [x] |
+| 1C bounded context projection | `packages/pipeline/src/intake-projection.ts` | [x] | [ ] | [x] |
+| 1D domain-validation fallback | `packages/pipeline/src/domain-routing.ts` | [x] | [ ] | [x] |
+| 1E classified retry + backoff | `packages/pipeline/src/pipeline/intake-retry.ts` | [x] | [ ] | [x] |
+| 1F usage/pricing stamping | `packages/providers/src/safety.ts`, `packages/pipeline/src/intake.ts` | [x] | [ ] | [x] |
+| 1G payload hygiene (no `sourceIds`) | `packages/contracts` (`CreateRunInputSchema`) | [x] | n/a | [x] |
+| 2A complexity + derived duration (approved) | `packages/pipeline/src/intake-normalize.ts`, contracts `IntakeBriefV3` | [x] | [ ] | [x] |
+| 2B content moderation gate (approved) | `packages/providers/src/safety.ts`, `packages/pipeline/src/intake.ts` | [x] | [ ] | [x] |
+| 2C domain taxonomy expansion (approved) | contracts `DomainSchema`, `packages/db` migration `0008`, `domain-routing.ts` | [x] | [ ] | [x] |
 
-Phase 2 items were explicitly approved by the user. Their governing-document
-updates (`video-generation-process.md`, `benchmarkstofocus.md`,
-`model-recommendations.md`) land with the Phase-6 promotion, per the
-"Development phase and scope boundaries" rule in `AGENTS.md`. The
-`DOMAIN_TAXONOMY_PROMOTION_PLAN` constant lists the exact 2C promotion steps.
+Phase 2 items were explicitly approved by the user and promoted in the same
+change as their governing-document updates (`video-generation-process.md`,
+`benchmarkstofocus.md`, `model-recommendations.md`). Production regression tests
+live in `packages/providers/test/intake-policy.test.ts`,
+`packages/providers/test/model-config.test.ts`, and
+`packages/pipeline/test/intake.test.ts`. The make-version schemas and migration
+require a live database/provider to run end-to-end (still marked Live `[ ]`).

@@ -7,6 +7,8 @@ const EMPTY_ENV: NodeJS.ProcessEnv = {};
 describe("model route registry", () => {
   it("matches the approved defaults in docs/model-recommendations.md exactly", () => {
     expect(MODEL_ROUTES["intake-brief"].defaultModel).toBe("openai/gpt-5.6-luna");
+    expect(MODEL_ROUTES["safety-classification"].defaultModel).toBe("openai/gpt-oss-safeguard-20b");
+    expect(MODEL_ROUTES["safety-classification"].provider).toBe("ai-gateway");
     expect(MODEL_ROUTES.planning.defaultModel).toBe("gpt-5.6-terra");
     expect(MODEL_ROUTES["fact-verification"].defaultModel).toBe("gemini-3.8-flash");
     expect(MODEL_ROUTES.illustration.defaultModel).toBe("gemini-3.1-flash-image");
@@ -54,6 +56,7 @@ describe("model route registry", () => {
     expect(requiredCredentials("planning")).toEqual(["OPENAI_API_KEY"]);
     expect(requiredCredentials("narration")).toEqual(["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]);
     expect(requiredCredentials("intake-brief")).toEqual(["AI_GATEWAY_API_KEY"]);
+    expect(requiredCredentials("safety-classification")).toEqual(["AI_GATEWAY_API_KEY"]);
   });
 
   it("maps every stage to a capability or an explicit deterministic stage", () => {

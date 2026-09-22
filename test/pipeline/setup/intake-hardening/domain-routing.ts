@@ -15,7 +15,7 @@ import { DomainSchema, type Domain } from "@upcraft/contracts";
  * to the agent rather than guessing. Pure function, no provider call.
  */
 
-const DOMAIN_PRECEDENCE: readonly Domain[] = ["engineering", "client-production", "standard"];
+const DOMAIN_PRECEDENCE: readonly Domain[] = ["engineering", "legal-compliance", "stem", "business", "humanities", "client-production", "standard"];
 
 /**
  * Sample keyword vocabulary for the approved domains. This is deliberately a
@@ -29,12 +29,25 @@ export const DOMAIN_KEYWORD_TABLE: Record<Domain, readonly string[]> = {
     "algorithm", "compiler", "database", "api", "software", "code", "unit test", "architecture",
     "thermodynamics", "torque", "stress", "strain", "cad", "beam", "load", "gear", "turbine", "hydraulic",
   ],
+  stem: [
+    "physics", "chemistry", "biology", "math", "mathematics", "calculus", "algebra", "geometry", "statistics",
+    "photosynthesis", "cell", "atom", "molecule", "enzyme", "ecosystem", "gene", "evolution", "quantum", "reaction",
+  ],
+  humanities: [
+    "history", "literature", "philosophy", "poetry", "essay", "civilization", "revolution", "ethics", "linguistics", "art history",
+  ],
+  "legal-compliance": [
+    "law", "legal", "contract", "compliance", "regulation", "gdpr", "hipaa", "litigation", "statute", "liability", "policy wording",
+  ],
+  business: [
+    "business", "finance", "marketing", "economics", "entrepreneurship", "accounting", "revenue", "startup", "supply chain",
+  ],
   "client-production": [
-    "client", "brand", "campaign", "stakeholder", "deliverable", "agency", "marketing", "promo",
+    "client", "brand", "campaign", "stakeholder", "deliverable", "agency", "promo",
     "commercial", "white-label", "brand guidelines", "sponsor",
   ],
   standard: [
-    "photosynthesis", "cell", "atom", "molecule", "grammar", "history", "geography", "poem",
+    "grammar", "geography", "poem", "study skills",
     "patient", "clinical", "medical", "disease", "diagnosis", "drug", "anatomy", "physiology",
   ],
 };

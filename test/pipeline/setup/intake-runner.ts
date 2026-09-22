@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir } from "node:fs/promises";
-import type { Domain, IntakeBriefV2 } from "@upcraft/contracts";
+import type { ResolvedIntakeBriefV3 } from "@upcraft/contracts";
 import { resolveModelRoute } from "@upcraft/providers";
 import { assertIntakeCapabilities, generateIntakeBrief, INTAKE_AGENT_ID, INTAKE_PROMPT_VERSION } from "@upcraft/providers/intake";
-import { normalizeIntakeBrief } from "./intake-hardening/defaults.ts";
+import { normalizeIntakeBrief } from "@upcraft/pipeline/intake";
 import { intakeContextManifest, projectIntakeContext } from "./intake-hardening/projection.ts";
 import { validateDomainClassification, type DomainClassification } from "./intake-hardening/domain-routing.ts";
-import { estimateComplexity, extractDurationHint, toSandboxBriefV3, withDerivedDuration } from "./intake-hardening/complexity.ts";
 import { moderateRequest, type SafetyClassification, type SafetyClassifier } from "./intake-hardening/safety.ts";
 import { buildIntakeAttemptRecord } from "./intake-hardening/usage.ts";
 import { classifyIntakeFailure, decideIntakeRetry, MAX_INTAKE_ATTEMPTS } from "./intake-hardening/retry-policy.ts";
@@ -35,7 +34,7 @@ export type IntakeHarnessResult = {
   blockReason?: string;
   failureMessage?: string;
   failureCode?: string;
-  brief?: IntakeBriefV2;
+  brief?: ResolvedIntakeBriefV3;
   domain?: DomainClassification;
   safety?: SafetyClassification;
   complexity?: number | null;
@@ -93,11 +92,10 @@ export const runIntakeHarness = async (params: {
     try {
       const result = await generateIntakeBrief({ requestText: projection.projection, language });
       const normalized = normalizeIntakeBrief(result.value);
-      const durationProvided = extractDurationHint(projection.projection) !== null;
-      const complexity = estimateComplexity(projection.projection);
-      const withDuration = withDerivedDuration(toSandboxBriefV3(normalized, complexity, durationProvided));
       const domain = validateDomainClassification({ agentDomain: normalized.domain, requestText: projection.projection });
-      const brief: IntakeBriefV2 = { ...normalized, durationSeconds: withDuration.durationSeconds, domain: domain.domain };
+      const brief: ResolvedIntakeBriefV3 = { ...normalized, domain: domain.domain };
+      const complexity = normalized.computedComplexity;
+      const durationProvided = normalized.durationProvided;
       const record = buildIntakeAttemptRecord({
         usage: result.usage,
         route,

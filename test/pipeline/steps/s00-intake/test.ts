@@ -93,7 +93,7 @@ const main = async () => {
   // --- 1D: deterministic domain-validation fallback ---
   const routing: Array<{ agent: "standard" | "engineering" | "client-production"; text: string; domain: string; override: boolean }> = [
     { agent: "standard", text: "Design a voltage divider circuit with a resistor", domain: "engineering", override: true },
-    { agent: "engineering", text: "Explain how photosynthesis works in a leaf cell", domain: "standard", override: true },
+    { agent: "engineering", text: "Explain how photosynthesis works in a leaf cell", domain: "stem", override: true },
     { agent: "client-production", text: "A branded campaign for our client", domain: "client-production", override: false },
     { agent: "standard", text: "Explain how rainbows form", domain: "standard", override: false },
     { agent: "client-production", text: "How a patient's disease is diagnosed", domain: "standard", override: true },
@@ -228,7 +228,7 @@ const main = async () => {
   }
   assert.equal(live.status, "passed", `live intake must not fail: ${live.failureMessage ?? ""}`);
   assert.ok(live.brief, "live intake must return a normalized brief");
-  assert.equal(live.brief!.schemaVersion, "intake-brief/v2");
+  assert.equal(live.brief!.schemaVersion, "intake-brief/v3");
   assert.ok(live.brief!.durationSeconds >= MIN_DURATION_SECONDS && live.brief!.durationSeconds <= MAX_DURATION_SECONDS);
   assert.equal(live.safety?.label, "safe");
   assert.ok(live.complexity !== null && live.complexity !== undefined);

@@ -1,6 +1,6 @@
 import { gateway } from "@ai-sdk/gateway";
 import { Output, ToolLoopAgent, isStepCount } from "ai";
-import { IntakeBriefV2Schema, type IntakeBriefV2, type ModelRoute } from "@upcraft/contracts";
+import { IntakeBriefV3Schema, type IntakeBriefV3, type ModelRoute } from "@upcraft/contracts";
 import type { ProviderResult } from "./usage.ts";
 import { assertIntakeCapabilities } from "./capabilities.ts";
 import { resolveModelRoute } from "./model-config.ts";
@@ -8,15 +8,19 @@ import { resolveModelRoute } from "./model-config.ts";
 export { assertIntakeCapabilities };
 
 export const INTAKE_AGENT_ID = "intake-briefing-agent";
-export const INTAKE_PROMPT_VERSION = "intake-briefing/v2";
+export const INTAKE_PROMPT_VERSION = "intake-briefing/v3";
 
 const instructions = `You are the Intake Briefing Agent for a source-grounded educational video system.
 
-Convert the user's lesson request into the strict intake-brief/v2 schema. You are configuration extraction, not a teacher or researcher. Never invent a source, claim, citation, narration, lesson explanation, or visual asset. You have no tools and must not request web search or external retrieval.
+Convert the user's lesson request into the strict intake-brief/v3 schema. You are configuration extraction, not a teacher or researcher. Never invent a source, claim, citation, narration, lesson explanation, or visual asset. You have no tools and must not request web search or external retrieval.
 
-Extract the full video configuration from the request: topic, learner level, audience category, duration, language, aspect ratio, visual style, and destination. Use these defaults only when the user did not explicitly provide a value: learner level Grade 8; audience school; duration 60 seconds; aspect ratio 16:9; visual profile "Precise, calm educational motion graphics"; destination local. Preserve the selected language exactly.
+Extract only the video configuration the user actually stated: topic, learner level, audience category, duration, language, aspect ratio, visual style, and destination. If the user did not state a configuration value, return null for that field — code owns the defaults. Do not guess a learner level, audience, visual style, destination, or duration. Preserve the selected language exactly.
 
-Interpret duration expressions into seconds (for example "10 minutes" becomes 600). Do not classify any topic as medical; every request is treated as a standard educational topic.
+If the user stated a duration, interpret the expression into seconds (for example "10 minutes" becomes 600) and set durationProvided to true. If they did not state one, set durationProvided to false and durationSeconds to null.
+
+Assess the topic's teaching complexity on a 1 (trivial) to 5 (advanced, multi-concept) scale as computedComplexity.
+
+Choose the domain from the approved set. Do not classify any topic as medical; every medical topic is a standard educational topic.
 
 Return only the requested structured object. Do not add fields, commentary, or reasoning.`;
 
@@ -30,22 +34,22 @@ export const createIntakeAgent = (route: ModelRoute) => new ToolLoopAgent({
   model: gateway(route.modelRef),
   instructions,
   tools: {},
-  output: Output.object({ schema: IntakeBriefV2Schema }),
+  output: Output.object({ schema: IntakeBriefV3Schema }),
   stopWhen: isStepCount(1),
 });
 
 const numeric = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
 /** Enforces the non-negotiable intake invariant (language preservation) after schema parsing. */
-export const enforceIntakeBriefPolicy = (params: { requestText: string; language: string; brief: unknown }): IntakeBriefV2 => {
-  const brief = IntakeBriefV2Schema.parse(params.brief);
+export const enforceIntakeBriefPolicy = (params: { requestText: string; language: string; brief: unknown }): IntakeBriefV3 => {
+  const brief = IntakeBriefV3Schema.parse(params.brief);
   if (brief.language !== params.language) {
     throw new Error("Intake Briefing Agent did not preserve the selected language exactly");
   }
   return brief;
 };
 
-export const generateIntakeBrief = async (params: { requestText: string; language: string }, env: NodeJS.ProcessEnv = process.env): Promise<ProviderResult<IntakeBriefV2>> => {
+export const generateIntakeBrief = async (params: { requestText: string; language: string }, env: NodeJS.ProcessEnv = process.env): Promise<ProviderResult<IntakeBriefV3>> => {
   const route = resolveModelRoute("intake-brief", env);
   const prompt = `Selected language: ${params.language}\nUser lesson request:\n${params.requestText}`;
   const result = await createIntakeAgent(route).generate({ prompt });

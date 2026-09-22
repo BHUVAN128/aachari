@@ -13,6 +13,10 @@ export const DomainSchema = z.enum([
   "standard",
   "engineering",
   "client-production",
+  "stem",
+  "humanities",
+  "legal-compliance",
+  "business",
 ]);
 export type Domain = z.infer<typeof DomainSchema>;
 
@@ -64,6 +68,7 @@ export type ProviderId = z.infer<typeof ProviderIdSchema>;
 /** A model-routed job named to mirror the model-recommendations job table. */
 export const ModelCapabilitySchema = z.enum([
   "intake-brief",
+  "safety-classification",
   "planning",
   "fact-verification",
   "script-verification",
@@ -139,7 +144,45 @@ export const IntakeBriefV2Schema = z.object({
 });
 export type IntakeBriefV2 = z.infer<typeof IntakeBriefV2Schema>;
 
-export const IntakeBriefSchema = z.union([IntakeBriefV2Schema, IntakeBriefV1Schema]);
+/**
+ * `intake-brief/v3` is the **extraction** contract the Intake Briefing Agent
+ * emits. Unlike the frozen v2 brief, configuration fields are nullable because
+ * the user may not have stated them: code owns the defaults (pipeline
+ * `normalizeIntakeBrief`). It also carries a bounded `computedComplexity`
+ * assessment and an explicit `durationProvided` flag so duration can be derived
+ * when the user gave none. Normalization produces the complete frozen brief every
+ * downstream stage consumes, so the frozen `input-snapshot/v1` is unchanged.
+ */
+export const IntakeBriefV3Schema = z.object({
+  schemaVersion: z.literal("intake-brief/v3"),
+  topic: z.string().min(3).max(500),
+  language: z.string().min(2).max(16),
+  domain: DomainSchema,
+  learningLevel: z.string().min(2).max(120).nullable().default(null),
+  audienceCategory: AudienceCategorySchema.nullable().default(null),
+  durationSeconds: z.number().int().positive().nullable().default(null),
+  visualProfile: z.string().min(2).max(200).nullable().default(null),
+  aspectRatio: AspectRatioSchema.nullable().default(null),
+  requestedDestination: z.string().min(1).max(200).nullable().default(null),
+  computedComplexity: z.number().int().min(1).max(5).nullable().default(null),
+  durationProvided: z.boolean().default(false),
+});
+export type IntakeBriefV3 = z.infer<typeof IntakeBriefV3Schema>;
+
+/** A v3 extraction after code has filled every configuration field. */
+export type ResolvedIntakeBriefV3 = Omit<
+  IntakeBriefV3,
+  "learningLevel" | "audienceCategory" | "durationSeconds" | "visualProfile" | "aspectRatio" | "requestedDestination"
+> & {
+  learningLevel: string;
+  audienceCategory: AudienceCategory;
+  durationSeconds: number;
+  visualProfile: string;
+  aspectRatio: AspectRatio;
+  requestedDestination: string;
+};
+
+export const IntakeBriefSchema = z.union([IntakeBriefV3Schema, IntakeBriefV2Schema, IntakeBriefV1Schema]);
 export type IntakeBrief = z.infer<typeof IntakeBriefSchema>;
 
 export const TextSourceInputSchema = z.object({
@@ -467,11 +510,14 @@ export const ApprovalDecisionSchema = z.object({
 });
 export type ApprovalDecision = z.infer<typeof ApprovalDecisionSchema>;
 
+/**
+ * `sourceIds` is intentionally absent: `createVideoRun` generates stable source
+ * identities itself, so a caller-supplied list was vestigial and misleading.
+ */
 export const CreateRunInputSchema = InputSnapshotSchema.omit({
   schemaVersion: true,
   sourceIds: true,
 }).extend({
-  sourceIds: z.array(z.string().uuid()).default([]),
   sources: z.array(SourceInputSchema).default([]),
 });
 export type CreateRunInput = z.infer<typeof CreateRunInputSchema>;

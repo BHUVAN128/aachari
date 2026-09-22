@@ -1,7 +1,7 @@
 import type { Domain, ModelCapability } from "@upcraft/contracts";
 import { MODEL_ROUTES, requiredCredentials, resolveModelRoute } from "./model-config.ts";
 
-export type Capability = "intake" | "planning" | "verification" | "research" | "illustration" | "voice" | "storage" | "renderer";
+export type Capability = "intake" | "safety" | "planning" | "verification" | "research" | "illustration" | "voice" | "storage" | "renderer";
 
 export type CapabilityResult = { capability: Capability; available: boolean; reason?: string | undefined; model?: string | undefined };
 
@@ -10,6 +10,7 @@ const has = (name: string) => Boolean(process.env[name]?.trim());
 /** Maps a public capability to the model capability whose credentials gate it. */
 const MODEL_CAPABILITY: Partial<Record<Capability, ModelCapability>> = {
   intake: "intake-brief",
+  safety: "safety-classification",
   planning: "planning",
   verification: "fact-verification",
   research: "research-web",
@@ -31,6 +32,7 @@ const modelCredentialResult = (capability: Capability, modelCapability: ModelCap
 
 export const resolveCapabilities = (domain: Domain, env?: NodeJS.ProcessEnv): CapabilityResult[] => [
   modelCredentialResult("intake", MODEL_CAPABILITY.intake!, env),
+  modelCredentialResult("safety", MODEL_CAPABILITY.safety!, env),
   modelCredentialResult("planning", MODEL_CAPABILITY.planning!, env),
   modelCredentialResult("verification", MODEL_CAPABILITY.verification!, env),
   modelCredentialResult("research", MODEL_CAPABILITY.research!, env),
@@ -56,6 +58,9 @@ export const assertCapabilities = (domain: Domain) => {
 };
 
 export const assertIntakeCapabilities = () => {
-  const intake = resolveCapabilities("standard").find((capability) => capability.capability === "intake");
+  const capabilities = resolveCapabilities("standard");
+  const intake = capabilities.find((capability) => capability.capability === "intake");
   if (!intake?.available) throw new Error(intake?.reason ?? "Chat intake capability is unavailable");
+  const safety = capabilities.find((capability) => capability.capability === "safety");
+  if (!safety?.available) throw new Error(safety?.reason ?? "Chat intake safety-classification capability is unavailable");
 };

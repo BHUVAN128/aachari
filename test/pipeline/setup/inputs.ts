@@ -76,7 +76,6 @@ export const buildRunInput = async (name: HarnessInputName): Promise<CreateRunIn
     domain: input.domain,
     visualProfile: input.visualProfile,
     requestedDestination: "local",
-    sourceIds: [],
     sources: [source],
   };
 };

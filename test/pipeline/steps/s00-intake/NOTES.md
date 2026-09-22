@@ -97,5 +97,6 @@ Phase-6 promotion, per the "Development phase and scope boundaries" rule in
 
 ## Status
 - [x] 1A–1F deterministic tests green
-- [x] Phase 2A–2C deterministic tests green (governing docs update at promotion)
+- [x] Phase 2A–2C deterministic tests green
+- [x] Promoted to `packages/` with same-change governing-doc updates; the harness remains as the sandbox
 - [ ] live run green (needs `AI_GATEWAY_API_KEY`)
