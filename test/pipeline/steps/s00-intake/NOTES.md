@@ -75,6 +75,61 @@ Phase-6 promotion, per the "Development phase and scope boundaries" rule in
   domains (they map to `standard`). `DOMAIN_TAXONOMY_PROMOTION_PLAN` lists the
   contract + DB-enum + governing-doc changes for promotion.
 
+## 3x — clarification loop (`intake-clarification/v1`)
+`setup/intake-hardening/clarification.ts` adds a bounded, stateful clarification
+loop in front of the billable briefing call. `intake-runner.ts` wires it into the
+s00 state machine.
+
+State machine
+- first call: projection → safety gate (terminal, first) → `assessRequestQuality`
+  - `clean` → briefing loop (unchanged)
+  - `unparseable` → `needs_input`, `attempts: 0`, code-written empathetic question
+    (`UNPARSEABLE_QUESTION`), `options: []`
+  - `unsure` → injectable model assessor → `ambiguous_request` ask or proceed
+  - `roundsUsed >= MAX_CLARIFICATION_ROUNDS` → terminal
+    `intake_clarification_exhausted` with no run
+- resume (`priorTurns.length > 0`): safety re-runs on the **new** text, heuristics
+  and the assessor are skipped entirely, and the briefing call receives the
+  resolved Q/A context. This is the fix for the resume double-jeopardy: an answer
+  like "Option A" is judged by the brief model, never re-flagged.
+- post-brief: `scrubTopicForSnapshot` reuses the structural rules on the extracted
+  topic; a garbage topic routes back to one final (capped) clarification round and
+  can never freeze.
+- `needs_input` carries no run identity; exhaustion is terminal (no retry).
+
+Detector (`assessRequestQuality`)
+- RULE 0: `priorTurns.length > 0` ⇒ `clean` (stateful bypass).
+- RULE 1: no letter tokens (after stripping zero-width/control characters) ⇒
+  `unparseable` (`§±§`, `!!! ###`, `123123`).
+- RULE 2: every letter token is structurally suspicious and no whitelist hit ⇒
+  `unparseable` (`asdf`, `aaaaaa`, `sdfkjh qwer`). Suspicious = repeated character,
+  canonical keyboard mash, consonant-only, or a 4+ consonant run. Single-letter
+  tokens are variables; the STEM whitelist (SQL, JWT, C++, x/y/n/π, …) is a
+  by-fiat rescue.
+- RULE 3: a high symbol ratio is never sufficient alone; with ≤1 letter token it
+  defers to the model (`unsure`).
+- RULE 4: a dangling function word (`the mitochondria is the`) or ≥half garbled
+  tokens (`fotosnthisss werkng plese`) ⇒ `unsure`, never a hard rejection. The
+  `unsure` deferral is the "dictionary": ESL/kid/STT input is protected from a
+  hard gate, and no wordlist dependency is vendored.
+
+PII stance
+- The resume context is transient model input only. It is never written to
+  `input-snapshot/v1` (structurally: the snapshot has no `requestText` field), an
+  attempt record, or telemetry — only a SHA-256 hash enters the `contextManifest`.
+  Raw turns stay in the private per-session `session.log`, which is existing log
+  handling.
+- The assessor prompt forbids personal details in questions/options; the post-brief
+  topic scrub is the deterministic backstop for a topic that would otherwise freeze.
+
+Why the contested calls landed here
+- Whitelist, not dictionary: a vendored wordlist is a maintenance/bundle liability
+  and still misses proper nouns; `unsure → model` is strictly more capable.
+- Options only for `ambiguous_request`: inventing options for raw garbage would be
+  hallucination; the honest move is a free-text question.
+- Post-brief scrub: closes the "user answers with garbage" hole the resume-context
+  fix alone leaves open.
+
 ## Assertions
 - 1A: `medical-adjacent` → `CreateRunInputSchema` parses with `domain=standard`.
 - 1B: null fields → `INTAKE_DEFAULTS`; explicit values preserved; duration
@@ -92,11 +147,26 @@ Phase-6 promotion, per the "Development phase and scope boundaries" rule in
 - 2B: benign vs unsafe classification, medical content stays safe, injected stub
   blocks with a terminal code, review blocks, model runner plumbing validates.
 - 2C: expanded-taxonomy routing cases; no medical/health domain; promotion plan.
+- 3A: five garbage inputs ⇒ `unparseable` ask, 0 token, `options: []`, no run.
+- 3A-STEM: SQL/JWT/C++/E=mc^2/Solve-for-x reach the brief with 0 clarifications.
+- 3A-regression: `photosynthesis working` / `photosynthesis` stay clean.
+- 3A-safety: safety_policy_rejected precedes clarification.
+- 3B: fragment → stub assessor `ambiguous_request` with bounded options + attempt v1.
+- 3B-resume: "Option A" is not re-evaluated; brief runs with the resolved context.
+- 3B-bound: post-brief guard caps at 2 rounds; the third ask is terminal.
+- 3C-STT: garbled real-word input is `unsure`, never hard-rejected.
+- 3D-1/2: PII stays transient; snapshot has no `requestText`; NDJSON hashes only.
+- 3E: a brief with topic `!!!` is caught and never frozen.
+- 3F: assessor attempts are stamped with promptVersion/latency/pricing; malformed
+  model output throws.
 - Live: real brief normalizes to a complete `intake-brief/v2` within range, with
-  recorded projection, safety, complexity, and domain evidence.
+  recorded projection, safety, complexity, and domain evidence. Real garbage is a
+  deterministic `needs_input` ask even before credentials are needed.
 
 ## Status
 - [x] 1A–1F deterministic tests green
 - [x] Phase 2A–2C deterministic tests green
 - [x] Promoted to `packages/` with same-change governing-doc updates; the harness remains as the sandbox
+- [x] 3x clarification loop deterministic tests green (sandbox-only)
+- [ ] 3x promotion to `packages/` (contracts `needs_input`, real assessor route, web option/mic UI) — separate user-approved change
 - [ ] live run green (needs `AI_GATEWAY_API_KEY`)

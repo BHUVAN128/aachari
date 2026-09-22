@@ -91,6 +91,7 @@ is scheduled, moves run-identity uniqueness into `createVideoRun`, and carries
 | 2A complexity + derived duration (approved) | `packages/pipeline/src/intake-normalize.ts`, contracts `IntakeBriefV3` | [x] | [ ] | [x] |
 | 2B content moderation gate (approved) | `packages/providers/src/safety.ts`, `packages/pipeline/src/intake.ts` | [x] | [ ] | [x] |
 | 2C domain taxonomy expansion (approved) | contracts `DomainSchema`, `packages/db` migration `0008`, `domain-routing.ts` | [x] | [ ] | [x] |
+| 3x intake clarification loop | `setup/intake-hardening/clarification.ts`, `setup/intake-runner.ts` | [x] | [ ] | [ ] |
 
 Phase 2 items were explicitly approved by the user and promoted in the same
 change as their governing-document updates (`video-generation-process.md`,
@@ -99,3 +100,11 @@ live in `packages/providers/test/intake-policy.test.ts`,
 `packages/providers/test/model-config.test.ts`, and
 `packages/pipeline/test/intake.test.ts`. The make-version schemas and migration
 require a live database/provider to run end-to-end (still marked Live `[ ]`).
+
+3x is sandbox-only: `intake-clarification/v1` adds a bounded, stateful
+clarification loop (`needs_input` result, code-written unparseable question,
+injectable model assessor for ambiguous requests, post-brief topic scrub). It
+edits no `packages/`/`apps/`/`docs/` file. Promotion is a separate user-approved
+change that adds `needs_input` to `IntakeSessionStatusSchema`, wires the real
+assessor route (reusing `intake-brief`, no new model route), builds the web
+option/mic UI, and lands the `benchmarkstofocus.md` gate rows.
