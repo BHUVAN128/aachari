@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "compliance-report/v1",
+  "checks": [
+    { "path": "checkedAt", "assert": "non-empty-string" },
+    { "path": "snapshotHash", "assert": "non-empty-string" },
+    { "path": "decision", "assert": "string" },
+    { "path": "failureCode", "assert": "exists" },
+    { "path": "sourceCount", "assert": "number" },
+    { "path": "screening", "assert": "array" },
+    { "path": "screening[].verdict", "assert": "string" },
+    { "path": "privacy.allowed", "assert": "boolean" },
+    { "path": "privacy.blockingKinds", "assert": "array" },
+    { "path": "privacy.findings", "assert": "array" },
+    { "path": "provenance", "assert": "array" },
+    { "path": "costCeiling.pricingVersion", "assert": "non-empty-string" },
+    { "path": "costCeiling.durationSeconds", "assert": "number" },
+    { "path": "costCeiling.unpriced", "assert": "boolean" },
+    { "path": "costCeiling.routes", "assert": "array-min", "value": 1 },
+    { "path": "costCeiling.routes[].unpriced", "assert": "boolean" },
+    { "path": "idempotency.identityKey", "assert": "non-empty-string" },
+    { "path": "idempotency.unique", "assert": "boolean" },
+    { "path": "idempotency.duplicateRunId", "assert": "exists" }
+  ]
+}

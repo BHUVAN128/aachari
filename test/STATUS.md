@@ -8,7 +8,7 @@ expected outcome sequence from a real, unblocked run, and its `test.ts` passes.
 | # | Step | Assertions | Live run |
 | --- | --- | --- | --- |
 | s00 | intake-hardening | code-owned defaults; bounded context projection; domain-validation fallback; classified retry+backoff; pricing stamping; medical-as-standard input | [ ] |
-| s01 | preflight | capability report emitted; missing credentials fail visibly | [ ] |
+| s01 | preflight | capability report emitted; missing credentials fail visibly; frozen-source screening; privacy gate; provenance validation; cost ceiling + idempotent run identity; compliance-report/v1 | [ ] |
 | s02 | research | lossless evidence map; fact-pack schema/contract; claims cite locked segments | [x] |
 | s03 | fact-verification | verifier rejects once then accepts (WF2); exhaustion fails visibly | [ ] |
 | s04 | blueprint | blueprint schema; objective coverage; critical-claim coverage | [ ] |
@@ -62,7 +62,20 @@ to `packages/pipeline` at Phase 6.
 | Research-web model route assertion | `packages/pipeline/test/model-route.test.ts` | [x] |
 | Medical domain/clinician removal (domain, DB, approvals, capabilities) | `packages/pipeline/test/domain-qa.test.ts`, `approvals-policy.test.ts` | [x] |
 
-s01 is intentionally untouched by this change (out of scope).
+## Preflight hardening (s01 — sandbox, post-freeze)
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| R1 frozen-source screening (denylist + injectable model classifier) | `setup/preflight-hardening/screening.ts` | [x] | [ ] | [ ] |
+| R2 privacy / secret scan (counts + hashes only) | `setup/preflight-hardening/privacy.ts` | [x] | n/a | [ ] |
+| R3 provenance validation (kind/name/hash, HTTPS URLs, rights flagged) | `setup/preflight-hardening/provenance.ts` | [x] | n/a | [ ] |
+| R4 cost ceiling + run-identity uniqueness | `setup/preflight-hardening/fraud-controls.ts` | [x] | n/a | [ ] |
+| R5 typed compliance evidence (`compliance-report/v1`) | `setup/preflight-hardening/compliance-report.ts` | [x] | n/a | [ ] |
+| Harness runner applying the guards to the frozen snapshot | `setup/preflight-runner.ts` | [x] | [ ] | n/a |
+
+Promotion (Phase 6) folds screening into the production `runPreflight` before s02
+is scheduled, moves run-identity uniqueness into `createVideoRun`, and carries
+`packages/*` regression suites plus any governing-doc updates in the same change.
 
 ## Intake hardening (s00 — sandbox, pre-run)
 

@@ -52,13 +52,15 @@ test/
     │   ├── runner.ts         runStage() with visible blocked/failed semantics
     │   ├── intake-runner.ts  runIntakeHarness() for the pre-run s00 intake step
     │   ├── intake-hardening/ s00 sandbox modules (defaults, projection, domain-routing, retry-policy, usage)
+    │   ├── preflight-runner.ts runPreflightHarness() for the run-scoped s01 safety gate
+    │   ├── preflight-hardening/ s01 sandbox modules (screening, privacy, provenance, fraud-controls, compliance-report)
     │   ├── run-stage.ts      CLI: node test/pipeline/setup/run-stage.ts s02 --input photosynthesis
     │   ├── run-all.ts        chained combine run over green steps
     │   ├── inputs.ts         named mock inputs + run input builder
     │   ├── frozen.ts         freeze/hydrate artifacts between steps
     │   ├── contract.ts       artifact contract validator (schema + invariants)
     │   ├── logger.ts         NDJSON + session.log usage ledger
-    │   ── mock-inputs/      photosynthesis, adversarial-segmentation, medical-adjacent
+    │   ── mock-inputs/      photosynthesis, adversarial-segmentation, medical-adjacent, hostile-injection
     ├── workflows/            wf1 standard, wf2 verifier rejection, wf3 transport recovery
     ├── artifacts/            frozen green artifacts (FROZEN.json pointer map)
     └── logs/                 <runId>/<step>.ndjson + session.log
@@ -75,6 +77,7 @@ node test/pipeline/setup/run-stage.ts s02 --input photosynthesis
 
 # a step test with assertions (blocked steps exit non-zero only on real failure)
 node test/pipeline/steps/s02-research/test.ts
+node test/pipeline/steps/s01-preflight/test.ts   # deterministic guardrails, no provider keys needed
 
 # the whole green chain (writes a combined log + cost total)
 node test/pipeline/setup/run-all.ts
