@@ -52,13 +52,13 @@ export const matchDomainKeywords = (requestText: string): Record<Domain, string[
   return matches;
 };
 
-export type DomainClassification = {
+export type DomainClassification<T extends string = Domain> = {
   /** The domain to freeze after validation. */
-  domain: Domain;
+  domain: T;
   /** The domain the agent proposed (schema-validated). */
-  agentDomain: Domain;
+  agentDomain: T;
   /** The heuristic's own pick; equals `agentDomain` when there was no signal. */
-  heuristicDomain: Domain;
+  heuristicDomain: T;
   /** True when the heuristic overrode the agent. */
   override: boolean;
   /** Keywords that fired, for the recorded evidence. */
@@ -66,21 +66,35 @@ export type DomainClassification = {
 };
 
 /**
- * Validates the agent's domain against deterministic keyword evidence. Defers to
- * the agent when no keyword fires anywhere (absence of signal is not a
- * disagreement). Throws on a domain outside the approved enum, because that is a
- * contract violation rather than a routing disagreement.
+ * Generic keyword-override scorer shared by the approved taxonomy and the sandbox
+ * taxonomy expansion. Defers to the agent when no keyword fires anywhere
+ * (absence of signal is not a disagreement). Scores are matched-keyword counts;
+ * ties prefer the agent's own pick, then `precedence` order, so the result is
+ * deterministic.
+ */
+export const classifyDomainByKeywords = <T extends string>(params: {
+  agentDomain: T;
+  requestText: string;
+  precedence: readonly T[];
+  table: Record<T, readonly string[]>;
+}): DomainClassification<T> => {
+  const matches = {} as Record<T, string[]>;
+  for (const domain of params.precedence) matches[domain] = params.table[domain].filter((keyword) => keywordPattern(keyword).test(params.requestText));
+  const scores = params.precedence.map((domain) => ({ domain, score: matches[domain].length }));
+  const best = Math.max(0, ...scores.map((entry) => entry.score));
+  if (best === 0) return { domain: params.agentDomain, agentDomain: params.agentDomain, heuristicDomain: params.agentDomain, override: false, matchedKeywords: [] };
+  const tied = scores.filter((entry) => entry.score === best).map((entry) => entry.domain);
+  const heuristicDomain = tied.includes(params.agentDomain) ? params.agentDomain : tied[0]!;
+  const matchedKeywords = [...new Set(tied.flatMap((domain) => matches[domain]))];
+  return { domain: heuristicDomain, agentDomain: params.agentDomain, heuristicDomain, override: heuristicDomain !== params.agentDomain, matchedKeywords };
+};
+
+/**
+ * Validates the agent's domain against deterministic keyword evidence over the
+ * approved taxonomy. Throws on a domain outside the approved enum, because that
+ * is a contract violation rather than a routing disagreement.
  */
 export const validateDomainClassification = (params: { agentDomain: Domain; requestText: string }): DomainClassification => {
   const agentDomain = DomainSchema.parse(params.agentDomain);
-  const matches = matchDomainKeywords(params.requestText);
-  const scores = DOMAIN_PRECEDENCE.map((domain) => ({ domain, score: matches[domain].length }));
-  const best = Math.max(0, ...scores.map((entry) => entry.score));
-  if (best === 0) {
-    return { domain: agentDomain, agentDomain, heuristicDomain: agentDomain, override: false, matchedKeywords: [] };
-  }
-  const tied = scores.filter((entry) => entry.score === best).map((entry) => entry.domain);
-  const heuristicDomain = tied.includes(agentDomain) ? agentDomain : tied[0]!;
-  const matchedKeywords = [...new Set(tied.flatMap((domain) => matches[domain]))];
-  return { domain: heuristicDomain, agentDomain, heuristicDomain, override: heuristicDomain !== agentDomain, matchedKeywords };
+  return classifyDomainByKeywords({ agentDomain, requestText: params.requestText, precedence: DOMAIN_PRECEDENCE, table: DOMAIN_KEYWORD_TABLE });
 };

@@ -75,7 +75,12 @@ s01 is intentionally untouched by this change (out of scope).
 | 1E classified retry + backoff | `setup/intake-hardening/retry-policy.ts` | [x] | [ ] | [ ] |
 | 1F usage/pricing stamping | `setup/intake-hardening/usage.ts` | [x] | [ ] | [ ] |
 | 1G payload hygiene (no `sourceIds`) | `setup/intake-runner.ts` | [x] | n/a | [ ] |
+| 2A complexity + derived duration (approved) | `setup/intake-hardening/complexity.ts` | [x] | [ ] | [ ] |
+| 2B content moderation gate (approved) | `setup/intake-hardening/safety.ts` | [x] | [ ] | [ ] |
+| 2C domain taxonomy expansion (approved) | `setup/intake-hardening/domain-taxonomy.ts` | [x] | [ ] | [ ] |
 
-Phase 2 (complexity extraction, safety moderation gate, domain taxonomy
-expansion) changes governing policy and is **not started** pending explicit user
-approval (see `steps/s00-intake/NOTES.md`).
+Phase 2 items were explicitly approved by the user. Their governing-document
+updates (`video-generation-process.md`, `benchmarkstofocus.md`,
+`model-recommendations.md`) land with the Phase-6 promotion, per the
+"Development phase and scope boundaries" rule in `AGENTS.md`. The
+`DOMAIN_TAXONOMY_PROMOTION_PLAN` constant lists the exact 2C promotion steps.

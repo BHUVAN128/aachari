@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "intake-brief/v2",
+  "checks": [
+    { "path": "computedComplexity", "assert": "exists" },
+    { "path": "durationProvided", "assert": "boolean" },
+    { "path": "durationSeconds", "assert": "number" }
+  ]
+}

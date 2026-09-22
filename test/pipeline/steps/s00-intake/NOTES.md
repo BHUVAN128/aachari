@@ -49,6 +49,32 @@ is a Phase-6 promotion.
   vestigial `CreateRunInputSchema.sourceIds` field is documented here for removal
   at promotion (`createVideoRun` generates source ids before its transaction).
 
+## Phase 2 (approved policy changes — sandbox prototypes)
+All three were explicitly approved. Governing-document updates land with the
+Phase-6 promotion, per the "Development phase and scope boundaries" rule in
+`AGENTS.md`.
+- **2A — topic complexity + derived duration (Point 3).** `complexity.ts` adds
+  `SandboxIntakeBriefV3Schema` (`computedComplexity` 1–5, `durationProvided`) and
+  `deriveDurationSeconds`: a user-stated duration always wins, otherwise the
+  complexity tier (60/90/120/180/300) applies, otherwise the code default. Tiers
+  clamp to 15–900s. `extractDurationHint` and `estimateComplexity` are the
+  deterministic sandbox stand-ins until the prompt extracts the field. Promotion
+  bumps `intake-brief/v2` → `v3` and updates `video-generation-process.md` §2 and
+  `benchmarkstofocus.md` routing rows; `s05` pacing needs no change.
+- **2B — content moderation gate (Point 6).** `safety.ts` adds the injectable
+  `SafetyClassifier`, the deterministic offline `keywordSafetyClassifier` (so no
+  harmful content is ever sent by the harness), and the promotion-ready
+  `createModelSafetyClassifier` over the approved `gpt-oss-safeguard-20b`
+  (`SAFETY_ROUTE`). `moderateRequest` runs **before** any billing or run identity;
+  `unsafe`/`review` block with terminal codes (`safety_policy_rejected`,
+  `safety_review_required`) that must never be retried. Promotion adds the safety
+  capability to `model-config.ts` and the M1 gate to the process doc.
+- **2C — domain taxonomy expansion (Point 5).** `domain-taxonomy.ts` widens the
+  sandbox enum to `stem`, `humanities`, `legal-compliance`, `business` and extends
+  the keyword fallback via the shared generic scorer. Medical/health are **not**
+  domains (they map to `standard`). `DOMAIN_TAXONOMY_PROMOTION_PLAN` lists the
+  contract + DB-enum + governing-doc changes for promotion.
+
 ## Assertions
 - 1A: `medical-adjacent` → `CreateRunInputSchema` parses with `domain=standard`.
 - 1B: null fields → `INTAKE_DEFAULTS`; explicit values preserved; duration
@@ -61,11 +87,15 @@ is a Phase-6 promotion.
   non-retryable failures.
 - 1F: pricing version always present; priced route math; unpriced explicitly
   recorded.
+- 2A: complexity tiers, explicit-duration precedence, clamps, hint parsing,
+  complexity ordering, and the v3 contract.
+- 2B: benign vs unsafe classification, medical content stays safe, injected stub
+  blocks with a terminal code, review blocks, model runner plumbing validates.
+- 2C: expanded-taxonomy routing cases; no medical/health domain; promotion plan.
 - Live: real brief normalizes to a complete `intake-brief/v2` within range, with
-  recorded projection and domain evidence.
+  recorded projection, safety, complexity, and domain evidence.
 
 ## Status
 - [x] 1A–1F deterministic tests green
+- [x] Phase 2A–2C deterministic tests green (governing docs update at promotion)
 - [ ] live run green (needs `AI_GATEWAY_API_KEY`)
-- [ ] Phase 2 (complexity extraction, safety gate, taxonomy expansion) — awaits
-  explicit governing-policy approval
