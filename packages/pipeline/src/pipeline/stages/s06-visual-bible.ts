@@ -3,7 +3,8 @@ import { generateStructuredText } from "@upcraft/providers";
 import { saveArtifact, requireContent, validationFeedback } from "../../artifacts/store.ts";
 import { sha } from "../../artifacts/hashing.ts";
 import { withFallback } from "../../fallback.ts";
-import { recordUsage } from "../../usage.ts";
+import { recordUsage, failWithFindings } from "../../usage.ts";
+import { validateCaptionSafeArea, validateEntityDescriptionLanguage } from "../../media-qa.ts";
 import { getRun } from "../../runs.ts";
 import { contextManifest, projectVisualContext } from "../../context.ts";
 import { visualBibleJsonSchema } from "../../prompts/visual-bible.ts";
@@ -26,5 +27,12 @@ export const runVisualBible = async (ctx: StageContext): Promise<unknown> => {
   });
   await recordUsage(runId, "visual-bible", bibleRun.route.provider, bibleRun.route.model, startedAt, bibleRun.value.usage, "visual-bible/v1", contextManifest("visual-action-projection/v1", [{ role: "visual-context", hash: sha(visualContext), chars: JSON.stringify(visualContext).length, itemCount: visualContext.narration.length }]));
   const bible = VisualBibleSchema.parse(bibleRun.value.value);
+  // Zero-token pre-save gate: a bad caption safe area or a localized entity
+  // description (which feeds the illustration prompt) fails before anything locks.
+  const issues = [
+    ...validateCaptionSafeArea(bible.captionSafeArea),
+    ...bible.persistentEntities.flatMap((entity) => validateEntityDescriptionLanguage(entity)),
+  ];
+  if (issues.length) await failWithFindings(runId, "Visual bible QA", issues);
   return saveArtifact({ runId, stage: "visual-bible", role: "visual-bible", schemaVersion: "visual-bible/v1", inputHash: sha(script), content: bible });
 };

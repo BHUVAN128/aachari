@@ -51,7 +51,7 @@ Run status is explicit: `queued`, `running`, `awaiting_approval`, `failed`, or `
 | M5 Visual bible | Approved script | `visual-bible/v1` | Continuity/safe-area lock | 1 planning call |
 | M6 Asset production | Approved script + visual bible | `selected-assets/v1`, `diagram-model/v1` per scene | Deterministic diagram + PNG byte verification | 0 (deterministic) or 1 image call per selected illustration |
 | M7 Spatial layout | Selected assets + measured anchors | `resolved-layout/v1` | Solver assertions | 0 |
-| M8 Voiceover & captions | Approved script | `voiceover/v1`, `caption-timings/v1` | Audio/alignment checks | 1 TTS call |
+| M8 Voiceover & captions | Approved script + verified pack (curated terms) | `voiceover/v1`, `caption-timings/v1` | Audio/alignment checks | 1 TTS call |
 | M9 Composition & render | Locked manifest | `video-manifest/v1`, `render-output/v1` (preview) | Render-integrity probe | 0 |
 | M10 Tiered QA | Preview render + locked manifest | `qa-report/v1` | Tier A + Tier B convergence | **0 (Tier A) + exactly 1 review call (Tier B)** |
 | M11 Release record | Final render + approval | `release-record/v1` | Required fields + approval level | 0 |
@@ -78,7 +78,7 @@ Create the measurable learning objective, learner prerequisites, hook, explanati
 
 ## §5 M4 Script approval — sequential
 
-Write spoken narration from the fact pack, then attach each line to a scene purpose, on-screen text, visual action, and source claims. Validate factual claims, reading level, duration, and safety policy before the script becomes immutable. A separate verifier or deterministic claim check must evaluate it against the fact pack; the script-writing model cannot be the only authority.
+Write spoken narration from the fact pack, then attach each line to a scene purpose, on-screen text, visual action, and source claims. Each line also carries a deterministic `pauseMs` derived from its visual beat, and every `visualAction` is an English renderer instruction regardless of the target language (only learner-facing narration and prose use the target language). Validate the English renderer-language directive as a zero-token pre-check and enforce factual claims, reading level, duration, and safety policy before the script becomes immutable. A separate verifier or deterministic claim check must evaluate it against the fact pack; the script-writing model cannot be the only authority.
 
 **Why:** changing the script after audio, captions, and scene assets exist causes needless cost and sync errors.
 
@@ -105,7 +105,7 @@ Each candidate asset has a stable identity derived from the run, scene, role, an
 1. **Measure anchors.** Anchors come only from deterministic SVG geometry, masks, landmarks, detections, or a reviewer correction. An anchor is a normalized point with positive finite source dimensions and must lie inside its asset.
 2. **Solve.** `solveAttachment(canvas, subject, target, constraint)` computes the overlay transform from the measured subject and target anchors, the requested relation (`attach` or `behind-mask`), scale, and z-order. It rejects an attachment that lies entirely outside the canvas and requires a validated clip path for a behind-mask relation.
 3. **Assert.** `assertAttachment` re-measures the resolved layer and fails if the subject anchor drifts from the target anchor by more than **0.75 px**. A resolved layout is emitted as `resolved-layout/v1` with layers sorted by z-index.
-4. **Verify deterministically.** Tier A re-checks the persisted layout: canvas match, layer containment, unique paint order, and no overlap with the caption panel.
+4. **Verify deterministically.** Tier A re-checks the persisted layout: canvas match, layer containment, unique paint order, and no overlap with the scene's computed caption zone. The caption safe area is a bounded fraction (each edge 0–1, and no opposite pair above 0.5) validated before the visual bible locks, and the per-scene caption zone is computed from the caption timings at solve time, so a diagram/caption collision fails at solve (zero tokens) rather than after the preview render.
 
 A layout that fails any assertion is not promoted; the run visibly fails and the overlay is re-solved from valid anchors. No model is asked to judge its own placement.
 
@@ -113,7 +113,7 @@ A layout that fails any assertion is not promoted; the run visibly fails and the
 
 ## §9 M8 Voiceover & captions — sequential, then derivation
 
-Generate one voiceover for the complete approved narration with pronunciation notes. Validate audio bytes, duration, loudness, voice identity, and curated-domain-term pronunciation. Obtain word/character alignment from the TTS response, derive phrase captions, and reserve short pauses for diagram inspection. Check captions against the locked script; do not independently paraphrase them or treat guessed timing as equivalent to rendered narration.
+Generate one voiceover for the complete approved narration with pronunciation notes. Validate audio bytes, duration, loudness, voice identity, and curated-domain-term pronunciation. Curated terms derive from the verified fact pack plus the canonical narration (narration terms take priority; no unverified claim token may enter provenance). Reserve short pauses for diagram inspection as explicit, deterministic `pauseMs`-derived break tags, and measure the rendered inter-line silence to prove each break was respected. Validate word/character alignment integrity (positive length, monotonic timestamps) and measured pauses before persisting the artifact, replaying with a bounded retry instead of healing timestamps; the voiceover replay identity binds the locked script, the verified pack, and the voice provider/model/identity. Obtain word/character alignment from the TTS response, derive phrase captions (width-, boundary-, and pause-aware), and check captions against the locked script; do not independently paraphrase them or treat guessed timing as equivalent to rendered narration.
 
 **Why:** one voice track preserves tone, pacing, and transitions. Captions must come from the rendered narration, not an independently paraphrased script.
 
@@ -169,6 +169,7 @@ Render the MP4 and optional SRT/transcript from the approved manifest. The immut
 | Script approval → complete voiceover → caption timing | Prevents visual/audio/caption drift. |
 | Visual bible → persistent asset generation | Preserves scene continuity. |
 | Asset measurement → spatial solve → spatial assertion | Keeps overlay placement deterministic. |
+| Caption derivation → spatial solve → spatial assertion | The per-scene caption zone is an input to the solve, so a diagram/caption collision is caught before the preview render. |
 | Asset/timing completion → final timeline → final render | Keeps the composition deterministic. |
 | Tier A + Tier B convergence → approval → publication | Prevents known errors from reaching learners. |
 

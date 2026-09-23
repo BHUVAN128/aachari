@@ -34,6 +34,15 @@ describe("token-safe context projections", () => {
     });
     expect(canonicalNarrationText(script)).toBe("First line\n\nSecond line");
     expect(Object.hasOwn(script, "fullText")).toBe(false);
+
+    const paced = ApprovedScriptSchema.parse({
+      schemaVersion: "approved-script/v2",
+      narration: [
+        { id: "22222222-2222-4222-8222-222222222222", sceneId: "33333333-3333-4333-8333-333333333333", text: "First line", claimIds: [], visualAction: "Reveal", pauseMs: 2000 },
+        { id: "44444444-4444-4444-8444-444444444444", sceneId: "55555555-5555-4555-8555-555555555555", text: "Second line", claimIds: [], visualAction: "Connect" },
+      ],
+    });
+    expect(canonicalNarrationText(paced)).toBe('First line<break time="2.000s"/>\n\nSecond line');
   });
 
   it("keeps a definition straddling the segment target inside one primary segment and emits overlap evidence", () => {

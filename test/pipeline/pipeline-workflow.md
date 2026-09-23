@@ -160,29 +160,39 @@ are from `video-generation-process.md` §1.
 
 - **Model route:** `narration` → `elevenlabs/eleven_multilingual_v2`
   (`ELEVENLABS_MODEL_ID`); credentials `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`.
-- **AI work:** one long-form TTS call with pronunciation notes and line-structured
-  break markers; measures duration, loudness, and voice identity, and derives
-  word/character alignment. Emits `voiceover/v1`.
+- **Locked inputs:** `approved-script/v2` + `verified-fact-pack/v1` (curated
+  terms derive from the verified pack and the canonical narration).
+- **AI work:** one long-form TTS call over the canonical narration with
+  `pauseMs`-derived break tags; measures duration, loudness, and voice identity,
+  and derives word/character alignment. Curated terms are narration-priority, and
+  alignment integrity plus measured pauses are gated before `voiceover/v1` is
+  persisted (bounded re-synthesis, never timestamp healing).
 - **Benchmarks / gate:** Voiceover — listener score ≥ 4/5; 100% of curated domain
-  terms accepted. Alignment must be monotonic with no dropped break.
+  terms accepted; timestamps strictly positive and monotonic; reserved pauses
+  rendered; replay identity binds the verified pack and voice identity.
 
 ### s09 `captions` — M8 caption derivation
 
 - **Model route:** none (`null`). Derived deterministically from the locked word
   alignment; captions are never independently paraphrased or guessed.
-- **AI work:** none. Emits `caption-timings/v1` and reconstructs wording from the
-  approved script.
+- **AI work:** none. Emits `caption-timings/v1`; cues are packed width-, boundary-,
+  and pause-aware so a cue never straddles a script line or a reserved pause.
 - **Benchmarks / gate:** Captions — 0 overflow/overlap defects; word alignment
   p95 ≤ 150 ms.
 
 ### s10 `spatial-layout` — M7 Spatial layout
 
+- **Locked inputs:** `approved-script/v2`, `selected-assets/v1` + measured
+  anchors, `caption-timings/v1`, and `visual-bible/v1` (bounded caption safe area).
 - **Model route:** none (`null`). The LLM may request a semantic relation but
   never supplies x/y, scale, or pixels.
-- **AI work:** none. Measures anchors, runs `solveAttachment`, and asserts with
-  `assertAttachment`; emits `resolved-layout/v1` with layers sorted by z-index.
+- **AI work:** none. Computes the true per-scene caption zone (script-class width
+  wrapping), measures anchors, runs `solveAttachment`, and asserts with
+  `assertAttachment`; emits `resolved-layout/v1` with layers sorted by z-index and
+  a per-scene `captionZone`.
 - **Benchmarks / gate:** Spatial layout — 0 solver-assertion failures; 0
-  out-of-bounds or caption-overlapping layers; drift ≤ 0.75 px.
+  out-of-bounds or caption-zone-overlapping layers; drift ≤ 0.75 px; exactly one
+  selected diagram per narrated scene.
 
 ### s11 `manifest` — M9 Composition manifest
 

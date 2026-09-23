@@ -7,6 +7,7 @@ import { recordUsage } from "../../usage.ts";
 import { getRun } from "../../runs.ts";
 import { assertScriptVerificationComplete } from "../../verification.ts";
 import { contextManifest, projectScriptContext } from "../../context.ts";
+import { pauseForVisualAction, validateScriptLanguageDirective, VISUAL_ACTION_PROMPT_RULES } from "../../media-qa.ts";
 import { scriptJsonSchema } from "../../prompts/script.ts";
 import type { StageContext } from "../context.ts";
 
@@ -24,11 +25,18 @@ export const runScript = async (ctx: StageContext): Promise<unknown> => {
   if (!run) throw new Error("Run not found");
   const snapshotProjection = `Learner level: ${run.snapshot.learningLevel}\nAudience: ${run.snapshot.audienceCategory}\nLanguage: ${run.snapshot.language}\nDuration budget: ${run.snapshot.durationSeconds}s\n`;
   const route = ctx.route("script")!;
-  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. ${snapshotProjection}Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` }), async (failedRoute, error) => {
+  const generated = await withFallback(route, async (attemptRoute) => generateStructuredText<Json>(attemptRoute, { schemaName: "approved_script", jsonSchema: scriptJsonSchema, prompt: `${await validationFeedback(runId, "script")}Write narration strictly from this scene plan and its verified claims. ${snapshotProjection}${VISUAL_ACTION_PROMPT_RULES} Return schemaVersion "approved-script/v2" and narration [{id,sceneId,text,claimIds,visualAction}]. Do not introduce uncited claims and do not return a separate fullText field.\n${JSON.stringify(scriptContext)}` }), async (failedRoute, error) => {
     await recordUsage(runId, "script", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "script/v2", { projection: "scene-claim-projection/v1" }, "failed", error.code);
   });
   await recordUsage(runId, "script", generated.route.provider, generated.route.model, startedAt, generated.value.usage, "script/v2", contextManifest("scene-claim-projection/v1", [{ role: "script-context", hash: sha(scriptContext), chars: JSON.stringify(scriptContext).length, itemCount: scriptContext.claims.length + scriptContext.scenes.length }]));
-  const script = ApprovedScriptSchema.parse(generated.value.value); const claimIds = new Set(factPackContent.claims.map((claim) => claim.id)); const sceneIds = new Set(blueprintContent.scenes.map((scene) => scene.id)); if (script.narration.some((line) => !sceneIds.has(line.sceneId) || line.claimIds.some((claimId) => !claimIds.has(claimId)))) throw new Error("Script contains an invalid scene or claim reference");
+  // Derive the reserved pause deterministically from each visual beat; the model
+  // never authors pauseMs. Then enforce the English renderer-language directive
+  // as a zero-token pre-check before the script is verified or persisted.
+  const parsedScript = ApprovedScriptSchema.parse(generated.value.value);
+  const script = ApprovedScriptSchema.parse({ ...parsedScript, narration: parsedScript.narration.map((line) => ({ ...line, pauseMs: pauseForVisualAction(line.visualAction) })) });
+  const claimIds = new Set(factPackContent.claims.map((claim) => claim.id)); const sceneIds = new Set(blueprintContent.scenes.map((scene) => scene.id)); if (script.narration.some((line) => !sceneIds.has(line.sceneId) || line.claimIds.some((claimId) => !claimIds.has(claimId)))) throw new Error("Script contains an invalid scene or claim reference");
+  const languageIssues = validateScriptLanguageDirective(script);
+  if (languageIssues.length) throw new Error(`Script renderer-language QA failed: ${languageIssues.map((issue) => issue.rule).join(", ")}. Rewrite only the flagged visualAction in English; keep narration verbatim.`);
   const verifierStartedAt = Date.now();
   const verificationContext = { schemaVersion: "script-verification-context/v1", narration: script.narration, claims: factPackContent.claims.filter((claim) => new Set(script.narration.flatMap((line) => line.claimIds)).has(claim.id)) };
   const verificationRun = await withFallback(resolveModelRoute("script-verification"), (attemptRoute) => reviewWithRoute(attemptRoute, `Independently verify every narration line against only its supplied verified claims. Return schemaVersion "script-verification/v2", one evidence item per line with lineId, supported, unsupportedClaimIds, rationale, and notes. Do not rewrite the script.\n${JSON.stringify(verificationContext)}`), async (failedRoute, error) => {

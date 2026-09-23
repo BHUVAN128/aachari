@@ -176,13 +176,16 @@ const rectIntersects = (a: { x: number; y: number; width: number; height: number
  */
 export const spatialQa = (input: SpatialQaInput): QaCheckResult => {
   const issues: QaIssue[] = [];
-  const captionPanel = {
+  // Fallback for older layouts; new layouts carry the true per-scene caption zone
+  // computed at s10, so this QA check and the solver assertion agree exactly.
+  const staticCaptionPanel = {
     x: input.safeArea.left,
     y: input.canvas.height - input.safeArea.bottom,
     width: input.canvas.width - input.safeArea.left - input.safeArea.right,
     height: input.safeArea.bottom,
   };
   for (const layout of input.layouts) {
+    const captionPanel = layout.captionZone ?? staticCaptionPanel;
     if (layout.canvas.width !== input.canvas.width || layout.canvas.height !== input.canvas.height) {
       issues.push({ rule: "spatial-canvas-mismatch", evidence: { sceneId: layout.sceneId, layoutCanvas: layout.canvas, canvas: input.canvas }, remediation: "Recompute the resolved layout against the locked manifest canvas." });
     }

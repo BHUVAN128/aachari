@@ -205,7 +205,16 @@ export const sourceEvidenceSegments = (map: SourceEvidenceMap, refs: Array<{ sou
   return [...new Map(segments.map((segment) => [segment.id, segment])).values()];
 };
 
-export const canonicalNarrationText = (script: Pick<ApprovedScript, "narration">) => script.narration.map((line) => line.text.trim()).join("\n\n");
+/** Deterministic SSML break for a line's reserved pause; empty when none. */
+export const pauseBreakTag = (pauseMs: number): string => (pauseMs > 0 ? `<break time="${(pauseMs / 1000).toFixed(3)}s"/>` : "");
+
+/**
+ * The single canonical TTS text, derived from the approved lines. Each line's
+ * reserved `pauseMs` becomes an explicit break tag, so the voiceover stage cannot
+ * invent a second divergent copy of the script or silently drop a visual dwell.
+ */
+export const canonicalNarrationText = (script: Pick<ApprovedScript, "narration">) =>
+  script.narration.map((line) => `${line.text.trim()}${pauseBreakTag(line.pauseMs ?? 0)}`).join("\n\n");
 
 /**
  * Gap 4 (promoted) — claim-local evidence window.

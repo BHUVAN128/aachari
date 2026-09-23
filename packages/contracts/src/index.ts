@@ -348,12 +348,18 @@ export type Blueprint = z.infer<typeof BlueprintV2Schema>;
 export const BlueprintSchema = z.union([BlueprintV2Schema, BlueprintV1Schema]);
 export type StoredBlueprint = z.infer<typeof BlueprintSchema>;
 
+/**
+ * Per-line reserved pause (Gap 2 promotion). Bounded so a pause cannot crowd out
+ * speech; derived deterministically from the visual beat, never model-authored.
+ */
+export const MAX_SCRIPT_PAUSE_MS = 5_000;
 export const ScriptLineSchema = z.object({
   id: z.string().uuid(),
   sceneId: z.string().uuid(),
   text: z.string().min(1),
   claimIds: z.array(z.string().uuid()),
   visualAction: z.string().min(1),
+  pauseMs: z.number().int().min(0).max(MAX_SCRIPT_PAUSE_MS).default(0),
 });
 export const ApprovedScriptSchema = z.object({
   schemaVersion: z.literal("approved-script/v2"),
@@ -367,7 +373,25 @@ export const ScriptVerificationSchema = z.object({
   notes: z.array(z.string()),
 });
 export type ScriptVerification = z.infer<typeof ScriptVerificationSchema>;
-export const VisualBibleSchema = z.object({ schemaVersion: z.literal("visual-bible/v1"), canvasTexture: z.string().min(1), lineStyle: z.string().min(1), palette: z.array(z.string().regex(/^#[0-9a-f]{6}$/i)).min(2), typography: z.object({ heading: z.string().min(1), body: z.string().min(1), caption: z.string().min(1) }), captionSafeArea: z.object({ top: z.number().min(0), right: z.number().min(0), bottom: z.number().min(0), left: z.number().min(0) }), persistentEntities: z.array(z.object({ id: z.string().min(1), description: z.string().min(1) })), camera: z.object({ behavior: z.string().min(1), transitions: z.array(z.string()) }), prohibitedVisualPatterns: z.array(z.string()) });
+export const MAX_CAPTION_SAFE_AREA_EDGE = 1;
+export const MAX_CAPTION_SAFE_AREA_PAIR_SUM = 0.5;
+/**
+ * Caption safe area is a fraction per edge and is bounded so the caption block
+ * always keeps at least half the canvas. Without this a bible `bottom: 3` (or a
+ * `top+bottom > 0.5` pair) survives s06 and only collides with the diagram at
+ * s13, after the preview-render spend.
+ */
+export const CaptionSafeAreaSchema = z
+  .object({
+    top: z.number().min(0).max(MAX_CAPTION_SAFE_AREA_EDGE),
+    right: z.number().min(0).max(MAX_CAPTION_SAFE_AREA_EDGE),
+    bottom: z.number().min(0).max(MAX_CAPTION_SAFE_AREA_EDGE),
+    left: z.number().min(0).max(MAX_CAPTION_SAFE_AREA_EDGE),
+  })
+  .refine((area) => area.top + area.bottom <= MAX_CAPTION_SAFE_AREA_PAIR_SUM, { message: "top + bottom caption safe-area margins must not exceed 0.5" })
+  .refine((area) => area.left + area.right <= MAX_CAPTION_SAFE_AREA_PAIR_SUM, { message: "left + right caption safe-area margins must not exceed 0.5" });
+export type CaptionSafeArea = z.infer<typeof CaptionSafeAreaSchema>;
+export const VisualBibleSchema = z.object({ schemaVersion: z.literal("visual-bible/v1"), canvasTexture: z.string().min(1), lineStyle: z.string().min(1), palette: z.array(z.string().regex(/^#[0-9a-f]{6}$/i)).min(2), typography: z.object({ heading: z.string().min(1), body: z.string().min(1), caption: z.string().min(1) }), captionSafeArea: CaptionSafeAreaSchema, persistentEntities: z.array(z.object({ id: z.string().min(1), description: z.string().min(1) })), camera: z.object({ behavior: z.string().min(1), transitions: z.array(z.string()) }), prohibitedVisualPatterns: z.array(z.string()) });
 export type VisualBible = z.infer<typeof VisualBibleSchema>;
 
 export const PointSchema = z.object({
@@ -481,6 +505,8 @@ export const ResolvedLayoutSchema = z.object({
   sceneId: z.string().uuid(),
   canvas: z.object({ width: z.number().positive(), height: z.number().positive() }),
   layers: z.array(ResolvedLayerSchema),
+  /** Computed caption block for this scene (W4); layers must clear it. */
+  captionZone: z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).optional(),
 });
 export type ResolvedLayout = z.infer<typeof ResolvedLayoutSchema>;
 

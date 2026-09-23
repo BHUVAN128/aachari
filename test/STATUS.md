@@ -46,15 +46,23 @@ user-approved change (Phase 6 style).
 
 | Item | Where it lives now | Deterministic tests | Live | Promoted |
 | --- | --- | --- | --- | --- |
-| W2 s08 pre-save alignment integrity gate + bounded re-synthesis (deadlock fix) | `steps/s08-voiceover/alignment-gate.ts` | [x] | [ ] | [ ] |
-| W1 shared curated-term derivation (verified-pack terms, narration priority) + voice-aware voiceover input hash | `steps/s08-voiceover/curated-terms.ts` | [x] | [ ] | [ ] |
-| W3 English `visualAction` directive + s06 entity-description language gate (bounded repair) | `steps/s05-script/language-directive.ts` | [x] | [ ] | [ ] |
-| W4 caption safe-area bound + true per-scene caption zone + width-aware cue packing + one-diagram-per-scene invariant | `steps/s10-spatial-layout/caption-zone.ts` | [x] | [ ] | [ ] |
-| W5 break-tag pause execution + measured-gap gate | `steps/s08-voiceover/line-synthesis.ts` | [x] | [ ] | [ ] |
+| W2 s08 pre-save alignment integrity gate + bounded re-synthesis (deadlock fix) | `packages/pipeline/src/media-qa.ts`, `stages/s08-voiceover.ts` | [x] | [ ] | [x] |
+| W1 shared curated-term derivation (verified-pack terms, narration priority) + voice-aware voiceover input hash | `packages/pipeline/src/media-qa.ts`, `stages/s08-voiceover.ts`, `stages/s13-qa.ts` | [x] | [ ] | [x] |
+| W3 English `visualAction` directive + s06 entity-description language gate (bounded repair) | `packages/pipeline/src/media-qa.ts`, `stages/s05-script.ts`, `stages/s06-visual-bible.ts` | [x] | [ ] | [x] |
+| W4 caption safe-area bound + true per-scene caption zone + width-aware cue packing + one-diagram-per-scene invariant | `packages/contracts`, `packages/pipeline/src/media-qa.ts`, `stages/s09-captions.ts`, `stages/s10-spatial-layout.ts`, `qa-branches.ts` | [x] | [ ] | [x] |
+| W5 break-tag pause execution + measured-gap gate | `packages/contracts`, `packages/pipeline/src/context.ts`, `packages/providers/src/elevenlabs.ts`, `stages/s08-voiceover.ts` | [x] | [ ] | [x] |
 
-Deterministic suites: `steps/s08-voiceover/test.ts`, `steps/s05-script/test.ts`,
+Sandbox suites: `steps/s08-voiceover/test.ts`, `steps/s05-script/test.ts`,
 `steps/s10-spatial-layout/caption-zone.test.ts`; harness type gate
 `npx tsc -p test/pipeline/tsconfig.json`.
+
+Promotion regression suites: `packages/pipeline/test/media-hardening.test.ts`,
+`packages/pipeline/test/context.test.ts`, `packages/contracts/test/script-pacing.test.ts`.
+Promoted with the same-change governing-doc updates in
+`video-generation-process.md` (§1 M8 input, §5, §8, §9, §13) and
+`benchmarkstofocus.md` (Captions/Voiceover gates + evaluation cadence). The
+voiceover pause path (ElevenLabs honoring `<break>` tags) still needs a live run
+to confirm; every other W1–W5 path is deterministic and green.
 
 ## Workflows
 

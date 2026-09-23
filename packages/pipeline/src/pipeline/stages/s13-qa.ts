@@ -11,7 +11,7 @@ import { sha } from "../../artifacts/hashing.ts";
 import { withFallback } from "../../fallback.ts";
 import { recordUsage } from "../../usage.ts";
 import { getRun } from "../../runs.ts";
-import { curatedDomainTerms } from "../../media-qa.ts";
+import { buildCuratedTerms } from "../../media-qa.ts";
 import { audioRenderQa, consolidatedReviewQa, convergeQaTiers, deterministicQa, spatialQa, structuralQa, visualQa, type QaTierResult } from "../../qa-branches.ts";
 import { canonicalNarrationText, contextManifest } from "../../context.ts";
 import type { DiagramPalette } from "../../diagram-qa.ts";
@@ -72,7 +72,7 @@ export const runQa = async (ctx: StageContext): Promise<unknown> => {
   if (!narration) throw new Error("QA requires the persisted narration asset");
   const narrationDurationMs = await probePrivateMedia({ objectKey: narration.objectKey, fileName: "narration.mp3", probe: probeAudioDurationMs });
   const narrationLoudness = await probePrivateMedia({ objectKey: narration.objectKey, fileName: "narration.mp3", probe: probeLoudness });
-  const curatedTerms = curatedDomainTerms([...(factPack?.claims.map((claim) => claim.text) ?? []), canonicalNarrationText(script)]);
+  const curatedTerms = buildCuratedTerms({ narrationText: canonicalNarrationText(script), verifiedClaimTexts: factPack?.claims.map((claim) => claim.text) ?? [] });
   const previewProvenance = previewArtifact ? requireContent<{ objectKey?: string }>(previewArtifact, "preview-render") : undefined;
   const previewProbe = previewProvenance?.objectKey
     ? await probePrivateMedia({ objectKey: previewProvenance.objectKey, fileName: "preview.mp4", probe: probeMedia })
