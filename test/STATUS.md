@@ -88,6 +88,28 @@ Promotion (Phase 6) folds screening into the production `runPreflight` before s0
 is scheduled, moves run-identity uniqueness into `createVideoRun`, and carries
 `packages/*` regression suites plus any governing-doc updates in the same change.
 
+## Fact-verification hardening (s03 — sandbox)
+
+Repair-first, drop-on-exhaustion policy: critical claims are never dropped (critical
+exhaustion fails the run terminally); non-critical claims drop with a recorded
+omission into `verified-fact-pack/v1` only at exhaustion. Deterministic tests live
+in `steps/s03-fact-verification/test.ts`.
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| A1 claim policy: classify + `verified-fact-pack/v1` omissions + bounded policy loop | `steps/s03-fact-verification/claim-policy.ts` | [x] | n/a | [ ] |
+| A2 claim-local evidence window (neighbours, cite tags, char budget) | `steps/s03-fact-verification/context-window.ts` | [x] | n/a | [ ] |
+| A3 verifier JSON extraction (fence strip, balanced object, throw-on-garbage) | `steps/s03-fact-verification/json-extraction.ts` | [x] | n/a | [ ] |
+| A4 claim-set replacement planner (delete+insert, no drop orphans) | `steps/s03-fact-verification/claim-store.ts` | [x] | n/a | [ ] |
+| A5 correction contract + ID-drift degradation | `steps/s03-fact-verification/verifier-loop.ts` | [x] | n/a | [ ] |
+
+Promotion (Phase 6) is one user-approved change: `verified-fact-pack/v1` into
+`packages/contracts`, the policy reducers into `packages/pipeline/src/verification.ts`,
+`withEvidenceWindow` into `packages/pipeline/src/context.ts`, the bounded policy loop
+into the s03 handler, `parseVerifierJson` into both verifier transports, and the
+same-change governing-doc updates in `video-generation-process.md` and
+`benchmarkstofocus.md`.
+
 ## Intake hardening (s00 — sandbox, pre-run)
 
 | Item | Where it lives now | Deterministic tests | Live | Promoted |

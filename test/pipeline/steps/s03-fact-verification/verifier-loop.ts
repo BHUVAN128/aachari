@@ -99,10 +99,44 @@ export type VerificationAttempt<T> = {
   value?: T;
 };
 
+/**
+ * The correction contract is part of the correction prompt so the generator
+ * knows the bounds of a targeted repair: it must keep the same schema version,
+ * preserve every already-accepted id verbatim, and rewrite only the listed
+ * rejected ids. `fact-pack/v2` and `approved-script/v2` override the wording but
+ * every caller ships a contract.
+ */
+export const CORRECTION_CONTRACT = "Keep the same schema and version; preserve every accepted id verbatim; rewrite only the listed rejected ids.";
+
 export type CorrectionPrompt = {
   attempt: number;
   rejectedIds: string[];
   rationale: string;
+  contract: string;
+};
+
+/**
+ * Reducer over a repaired artifact: reports whether the previously accepted ids
+ * survived the rewrite. ID drift is a signal to fully re-verify, never a hard
+ * failure — correctness must not depend on the generator keeping ids stable.
+ */
+export type IdPreservation = {
+  preserved: boolean;
+  acceptedIds: string[];
+  observedIds: string[];
+  driftedIds: string[];
+  missingIds: string[];
+  requiresFullReverification: boolean;
+};
+
+export const assertIdPreservation = (acceptedIds: string[], next: { claims: Array<{ id: string }> }): IdPreservation => {
+  const accepted = new Set(acceptedIds);
+  const observed = next.claims.map((claim) => claim.id);
+  const observedSet = new Set(observed);
+  const missingIds = acceptedIds.filter((id) => !observedSet.has(id));
+  const driftedIds = observed.filter((id) => !accepted.has(id));
+  const preserved = missingIds.length === 0 && driftedIds.length === 0;
+  return { preserved, acceptedIds: [...acceptedIds], observedIds: observed, driftedIds, missingIds, requiresFullReverification: !preserved };
 };
 
 /**
@@ -113,11 +147,14 @@ export type CorrectionPrompt = {
  */
 export const runBoundedVerifierLoop = async <T>(params: {
   maxAttempts?: number;
+  /** Overrides the default correction contract for stage-specific wording. */
+  contract?: string;
   generate: (correction: CorrectionPrompt | null) => Promise<T>;
   verify: (value: T) => Promise<void> | void;
   onAttempt?: (attempt: VerificationAttempt<T>) => Promise<void> | void;
 }): Promise<{ value: T; attempts: VerificationAttempt<T>[] }> => {
   const maxAttempts = params.maxAttempts ?? MAX_VERIFIER_ATTEMPTS;
+  const contract = params.contract ?? CORRECTION_CONTRACT;
   const attempts: VerificationAttempt<T>[] = [];
   let correction: CorrectionPrompt | null = null;
   let lastRejectedIds: string[] = [];
@@ -136,7 +173,7 @@ export const runBoundedVerifierLoop = async <T>(params: {
       const record: VerificationAttempt<T> = { attempt, outcome: "rejected-by-verifier", rejectedIds: error.rejectedIds, rationale: error.rationale };
       attempts.push(record);
       await params.onAttempt?.(record);
-      correction = { attempt: attempt + 1, rejectedIds: error.rejectedIds, rationale: error.rationale };
+      correction = { attempt: attempt + 1, rejectedIds: error.rejectedIds, rationale: error.rationale, contract };
     }
   }
 
