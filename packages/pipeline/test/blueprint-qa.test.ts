@@ -1,6 +1,17 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { BlueprintV2Schema, type Blueprint } from "@upcraft/contracts";
-import { validateBlueprint } from "../src/blueprint-qa.ts";
+import {
+  blueprintInputHash,
+  criticalClaimBudget,
+  sceneBoundsFor,
+  validateBlueprint,
+  validateClaimBudget,
+  validateClaimsPerScene,
+  validateSceneDensity,
+  validateVisualBeat,
+  validateVisualBeats,
+} from "../src/blueprint-qa.ts";
 
 const sceneA = "22222222-2222-4222-8222-222222222222";
 const sceneB = "33333333-3333-4333-8333-333333333333";
@@ -55,5 +66,70 @@ describe("blueprint validation", () => {
   it("checks that a knowledge-check answer points at one of its options", () => {
     const issues = validate({ ...base, knowledgeCheck: { question: "What carries energy?", options: ["light", "sound"], answerIndex: 4 } });
     expect(issues.map((issue) => issue.rule)).toContain("blueprint-knowledge-check-answer");
+  });
+});
+
+describe("scene density", () => {
+  it("computes the 6-20s corridor per duration", () => {
+    expect(sceneBoundsFor(30)).toEqual({ minScenes: 1, maxScenes: 5 });
+    expect(sceneBoundsFor(120)).toEqual({ minScenes: 6, maxScenes: 20 });
+    expect(sceneBoundsFor(600)).toEqual({ minScenes: 30, maxScenes: 100 });
+  });
+
+  it("passes an in-corridor scene count and flags too few or too many", () => {
+    expect(validateSceneDensity({ sceneCount: 12, durationSeconds: 120 })).toEqual([]);
+    expect(validateSceneDensity({ sceneCount: 5, durationSeconds: 120 }).map((issue) => issue.rule)).toEqual(["blueprint-scene-density-low"]);
+    expect(validateSceneDensity({ sceneCount: 21, durationSeconds: 120 }).map((issue) => issue.rule)).toEqual(["blueprint-scene-density-high"]);
+    expect(validateSceneDensity({ sceneCount: 10, durationSeconds: 600 }).map((issue) => issue.rule)).toEqual(["blueprint-scene-density-low"]);
+    expect(validateSceneDensity({ sceneCount: 8, durationSeconds: 30 }).map((issue) => issue.rule)).toEqual(["blueprint-scene-density-high"]);
+  });
+});
+
+describe("critical-claim budget", () => {
+  it("allows 8 critical claims per minute and rejects an over-budget set without pruning", () => {
+    expect(criticalClaimBudget(60)).toBe(8);
+    expect(criticalClaimBudget(120)).toBe(16);
+    expect(validateClaimBudget({ criticalClaimCount: 8, durationSeconds: 60 })).toEqual([]);
+    const exceeded = validateClaimBudget({ criticalClaimCount: 25, durationSeconds: 60 });
+    expect(exceeded.map((issue) => issue.rule)).toEqual(["blueprint-claim-budget-exceeded"]);
+    expect(exceeded[0]?.evidence).toMatchObject({ criticalClaimCount: 25, budget: 8 });
+    expect(exceeded[0]?.remediation).toMatch(/never dropped/);
+  });
+
+  it("flags a scene that carries more than three claims", () => {
+    expect(validateClaimsPerScene({ scenes: [{ id: sceneA, claimIds: [claimA, claimB, claimC] }] })).toEqual([]);
+    const crowded = validateClaimsPerScene({ scenes: [{ id: sceneB, claimIds: [claimA, claimB, claimC, claimA] }] });
+    expect(crowded.map((issue) => issue.rule)).toEqual(["blueprint-scene-claim-overcrowded"]);
+    expect(crowded[0]?.evidence).toMatchObject({ sceneId: sceneB, claimCount: 4 });
+  });
+});
+
+describe("visual-beat validation", () => {
+  it("rejects a non-English beat, a vague beat, and a non-directive beat", () => {
+    expect(validateVisualBeat("\u0b87\u0bb2\u0bc8 \u0b92\u0bb3\u0bbf\u0b9a\u0bcd\u0b9a\u0bc7\u0bb0\u0bcd\u0b95\u0bcd\u0b95\u0bc8\u0baf\u0bc8 \u0bb5\u0bbf\u0bb3\u0b95\u0bcd\u0b95\u0bc1\u0b95\u0bbf\u0bb1\u0ba4\u0bc1").map((issue) => issue.rule)).toEqual(["blueprint-visual-beat-localized"]);
+    expect(validateVisualBeat("Show video").map((issue) => issue.rule)).toEqual(["blueprint-visual-beat-vague"]);
+    expect(validateVisualBeat("The process explains how plants make sugar from light").map((issue) => issue.rule)).toEqual(["blueprint-visual-beat-nonDirective"]);
+  });
+
+  it("accepts a directed English beat and does not flag Greek scientific notation", () => {
+    expect(validateVisualBeat("Reveal the leaf cross-section, then trace light energy into the chloroplast")).toEqual([]);
+    expect(validateVisualBeat("Label the \u03b2-carbon on the glucose ring")).toEqual([]);
+  });
+
+  it("tags each finding with its scene id", () => {
+    const issues = validateVisualBeats({ scenes: [{ id: sceneA, visualBeat: "Show it" }] });
+    expect(issues[0]?.evidence).toMatchObject({ sceneId: sceneA });
+  });
+});
+
+describe("composite input hash", () => {
+  it("binds the fact pack and the frozen snapshot and differs from the fact-pack-only hash", () => {
+    const factPack = { schemaVersion: "verified-fact-pack/v1", claims: [{ id: claimA }] };
+    const snapshotHash = "a".repeat(64);
+    const factPackOnly = createHash("sha256").update(JSON.stringify(factPack)).digest("hex");
+    expect(blueprintInputHash(factPack, snapshotHash)).toBe(blueprintInputHash(factPack, snapshotHash));
+    expect(blueprintInputHash(factPack, snapshotHash)).not.toBe(blueprintInputHash(factPack, "b".repeat(64)));
+    expect(blueprintInputHash(factPack, snapshotHash)).not.toBe(blueprintInputHash({ ...factPack, claims: [] }, snapshotHash));
+    expect(blueprintInputHash(factPack, snapshotHash)).not.toBe(factPackOnly);
   });
 });

@@ -106,18 +106,17 @@ are from `video-generation-process.md` §1.
 - **AI work:** one planning call creates the measurable objective, prerequisites,
   hook, explanation arc, recap, and scene/visual beats as `lesson-blueprint/v2`,
   referencing verified claim ids.
-- **Sandbox hardening (`test/pipeline/steps/s04-blueprint/`, Flaws 1–6):** a
-  0-token pre-generation guard rejects an over-budget critical-claim set
-  (8/minute, never pruned) before any planning call; deterministic QA then checks
-  scene density (6–20s/scene), per-scene claim load (≤3), visual-beat directive
-  quality, and English `visualBeat`; a bounded repair loop (max 3) re-prompts with
-  the accumulated missing claim ids and fails terminally with
-  `BLUEPRINT_QA_EXHAUSTED`; the saved artifact carries the composite
-  `sha([factPack, snapshotHash])` input hash.
+- **Hardening (promoted, Flaws 1–6):** a 0-token pre-generation guard rejects an
+  over-budget critical-claim set (8/minute, never pruned) before any planning
+  call; deterministic QA then checks scene density (6–20s/scene), per-scene claim
+  load (≤3), visual-beat directive quality, and English `visualBeat`; a bounded
+  repair loop (max 3) re-prompts with the accumulated missing claim ids and fails
+  terminally with `BLUEPRINT_QA_EXHAUSTED`; the saved artifact carries the
+  composite `sha([factPack, snapshotHash])` input hash. The sandbox modules remain
+  under `test/pipeline/steps/s04-blueprint/`.
 - **Benchmarks / gate:** Lesson plan — teacher score ≥ 4/5 average; no critical
-  pedagogy issue. The sandbox gate adds 0 scene-density violations, a respected
-  critical-claim budget, and 0 vague or localized visual beats; these become
-  governing release gates only at Phase-6 promotion.
+  pedagogy issue; 0 scene-density violations (6–20s/scene); critical-claim budget
+  respected; 0 vague or localized visual beats.
 
 ### s05 `script` — M4 Script approval
 

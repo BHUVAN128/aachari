@@ -123,20 +123,20 @@ skeleton is `steps/s04-blueprint/live.ts`.
 
 | Item | Where it lives now | Deterministic tests | Live | Promoted |
 | --- | --- | --- | --- | --- |
-| F1 composite input hash `sha([factPack, snapshotHash])` | `steps/s04-blueprint/input-composite.ts` | [x] | n/a | [ ] |
-| F2 scene-density guard (6–20s/scene) | `steps/s04-blueprint/pacing-guard.ts` | [x] | n/a | [ ] |
-| F3 critical-claim budget (8/min, pre-gen) + per-scene cap (3) | `steps/s04-blueprint/claim-budget.ts` | [x] | n/a | [ ] |
-| F4/F6 visual-beat validation + English directive | `steps/s04-blueprint/visual-directives.ts` | [x] | n/a | [ ] |
-| F5 bounded blueprint repair loop (max 3, `BLUEPRINT_QA_EXHAUSTED`) | `steps/s04-blueprint/blueprint-repair.ts` | [x] | n/a | [ ] |
+| F1 composite input hash `sha([factPack, snapshotHash])` | `packages/pipeline/src/blueprint-qa.ts` | [x] | n/a | [x] |
+| F2 scene-density guard (6–20s/scene) | `packages/pipeline/src/blueprint-qa.ts` | [x] | n/a | [x] |
+| F3 critical-claim budget (8/min, pre-gen) + per-scene cap (3) | `packages/pipeline/src/blueprint-qa.ts` | [x] | n/a | [x] |
+| F4/F6 visual-beat validation + English directive | `packages/pipeline/src/blueprint-qa.ts`, `prompts/blueprint.ts` | [x] | n/a | [x] |
+| F5 bounded blueprint repair loop (max 3, `BLUEPRINT_QA_EXHAUSTED`) | `packages/pipeline/src/blueprint-repair.ts`, `pipeline/stages/s04-blueprint.ts` | [x] | n/a | [x] |
 
-Promotion (Phase 6, separate change) ports the five modules into
-`packages/pipeline/src/blueprint-qa.ts`, `blueprint-repair.ts`,
-`prompts/blueprint.ts`, and `pipeline/stages/s04-blueprint.ts` (pre-gen guard
-before `withFallback`; the bounded loop wraps generation+QA; composite hash on
-save), adds `packages/pipeline/test/blueprint-qa.test.ts`, and carries the
-governing-doc updates in `video-generation-process.md` §4,
-`benchmarkstofocus.md` (Lesson-plan gate row), and `model-recommendations.md` in
-the same change.
+Promoted into `packages/` (Phase 6): the s04 handler runs the 0-token
+claim-budget guard before `withFallback`, wraps generation + deterministic QA in
+the bounded repair loop, and saves the artifact with the composite input hash.
+Regression suites live in `packages/pipeline/test/blueprint-qa.test.ts` and
+`packages/pipeline/test/blueprint-repair.test.ts`. The same change updated
+`video-generation-process.md` §4, the `benchmarkstofocus.md` Lesson-plan gate row
+and evaluation cadence, and `model-recommendations.md`. The real blueprint run
+still needs `OPENAI_API_KEY`.
 
 ## Intake hardening (s00 — sandbox, pre-run)
 

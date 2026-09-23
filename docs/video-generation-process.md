@@ -72,9 +72,9 @@ Retrieve authoritative, topic-appropriate sources. When the run was created with
 
 ## §4 M3 Lesson blueprint — sequential
 
-Create the measurable learning objective, learner prerequisites, hook, explanation arc, recap, and optional knowledge-check. Divide the explanation into scenes and visual beats; each beat introduces one idea and one meaningful canvas change. Validate the typed blueprint for learning-objective coverage, prerequisites, scene order, and claim references before locking it.
+Create the measurable learning objective, learner prerequisites, hook, explanation arc, recap, and optional knowledge-check. Divide the explanation into scenes and visual beats; each beat introduces one idea and one meaningful canvas change. Before any planning call, a deterministic zero-token guard rejects a critical-claim set that exceeds the requested duration budget (**8 critical claims per minute**), because critical claims are undroppable and can never be fixed by pruning. Validate the typed blueprint for learning-objective coverage, prerequisites, scene order, claim references, scene density (**6–20 seconds per scene** for the requested duration), per-scene claim load (**at most 3 claims**), and a meaningful English visual beat (at least 4 words and at least one canvas-direction verb). The saved artifact binds the verified fact pack and the frozen snapshot in its input hash. A rejected blueprint is repaired in a bounded correction loop (max 3 attempts) that re-prompts with the exact failed rules and the accumulated missing critical-claim ids; exhaustion fails the run visibly with `BLUEPRINT_QA_EXHAUSTED` and never promotes the artifact.
 
-**Why:** this is where the system becomes a teacher rather than a generic story generator.
+**Why:** this is where the system becomes a teacher rather than a generic story generator. Deterministic guards catch an out-of-budget or garbled plan before a token is spent, and a bounded repair gives one bad scene a targeted fix without masking a persistent failure.
 
 ## §5 M4 Script approval — sequential
 

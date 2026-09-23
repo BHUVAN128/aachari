@@ -77,5 +77,10 @@ Test-local modules in this folder until Phase-6 promotion.
 
 ## Status
 - [x] Flaws 1–6 deterministic tests green
+- [x] promoted to `packages/` (Phase 6): guards in `blueprint-qa.ts`, loop in
+  `blueprint-repair.ts`, prompt rules in `prompts/blueprint.ts`, wiring in
+  `pipeline/stages/s04-blueprint.ts`, regression suites in
+  `packages/pipeline/test/blueprint-qa.test.ts` and `blueprint-repair.test.ts`,
+  and governing-doc updates in `video-generation-process.md` §4,
+  `benchmarkstofocus.md`, and `model-recommendations.md`
 - [ ] real blueprint run green (needs `OPENAI_API_KEY`)
-- [ ] promoted to `packages/` (Phase 6, separate approved change)
