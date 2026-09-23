@@ -10,6 +10,7 @@ import type { CreateRunInput, Domain, SourceInput } from "@upcraft/contracts";
  */
 export type HarnessInputName =
   | "photosynthesis"
+  | "photosynthesis-sourceless"
   | "adversarial-segmentation"
   | "medical-adjacent";
 
@@ -40,6 +41,18 @@ export const HARNESS_INPUTS: Record<HarnessInputName, HarnessInput> = {
     visualProfile: "clean whiteboard science explainer",
     sourceFile: "photosynthesis.txt",
   },
+  // Source-less run: the Brave web-research path only runs when the user supplied
+  // no source, so this input carries no source file.
+  "photosynthesis-sourceless": {
+    name: "photosynthesis-sourceless",
+    topic: "How photosynthesis works",
+    learningLevel: "Primary school, ages 9-11",
+    audienceCategory: "school",
+    domain: "standard",
+    durationSeconds: 120,
+    visualProfile: "clean whiteboard science explainer",
+    sourceFile: "",
+  },
   "adversarial-segmentation": {
     name: "adversarial-segmentation",
     topic: "Photosynthesis definitions and stages",
@@ -64,8 +77,7 @@ export const HARNESS_INPUTS: Record<HarnessInputName, HarnessInput> = {
 
 export const buildRunInput = async (name: HarnessInputName): Promise<CreateRunInput> => {
   const input = HARNESS_INPUTS[name];
-  const value = await readMockSource(input.sourceFile);
-  const source: SourceInput = { kind: "text", name: input.sourceFile, value };
+  const sources: SourceInput[] = input.sourceFile ? [{ kind: "text", name: input.sourceFile, value: await readMockSource(input.sourceFile) }] : [];
   return {
     topic: input.topic,
     learningLevel: input.learningLevel,
@@ -76,6 +88,6 @@ export const buildRunInput = async (name: HarnessInputName): Promise<CreateRunIn
     domain: input.domain,
     visualProfile: input.visualProfile,
     requestedDestination: "local",
-    sources: [source],
+    sources,
   };
 };

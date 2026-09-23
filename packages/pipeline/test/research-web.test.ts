@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildSourceEvidenceMap, sourceEvidenceSegments } from "../src/context.ts";
-import { WEB_SOURCE_MAX_BYTES, WEB_SOURCE_MIN_TEXT_LENGTH, isAcceptableWebSource, normalizeHttpsUrl, parseWebResearchSources } from "../src/web-research.ts";
+import { assembleBraveDocuments, isAcceptableBraveSource, joinBraveSnippets, normalizeHttpsUrl, parseWebResearchSources, WEB_SOURCE_MAX_BYTES, WEB_SOURCE_MIN_TEXT_LENGTH, isAcceptableWebSource } from "../src/web-research.ts";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -41,6 +41,29 @@ describe("web source quality gate", () => {
     expect(isAcceptableWebSource({ contentType: "application/octet-stream", textLength: 5_000, byteSize: 1_000 })).toBe(false);
     expect(isAcceptableWebSource({ contentType: "text/html", textLength: WEB_SOURCE_MIN_TEXT_LENGTH - 1, byteSize: 1_000 })).toBe(false);
     expect(isAcceptableWebSource({ contentType: "text/html", textLength: 5_000, byteSize: WEB_SOURCE_MAX_BYTES + 1 })).toBe(false);
+  });
+});
+
+describe("Brave LLM Context source policy", () => {
+  const longSnippets = ["Photosynthesis converts light energy into chemical energy. ".repeat(4).trim(), "Chlorophyll absorbs light and releases oxygen. ".repeat(4).trim()];
+
+  it("joins snippets losslessly and only accepts HTTPS sources above the minimum length", () => {
+    const source = { url: "https://www.example.edu/photosynthesis", snippets: longSnippets };
+    expect(joinBraveSnippets(source.snippets)).toBe(longSnippets.join(" "));
+    expect(isAcceptableBraveSource(source)).toBe(true);
+    expect(isAcceptableBraveSource({ url: "http://insecure.example.edu/x", snippets: longSnippets })).toBe(false);
+    expect(isAcceptableBraveSource({ url: "https://short.example.edu/x", snippets: ["too short"] })).toBe(false);
+  });
+
+  it("assembles deduped documents with per-URL provenance", () => {
+    const first = { url: "https://www.example.edu/photosynthesis", snippets: longSnippets };
+    const documents = assembleBraveDocuments([first, { ...first }, { url: "http://insecure.example.edu/x", snippets: longSnippets }]);
+    expect(documents).toHaveLength(1);
+    expect(documents[0]!.extractedText.startsWith("Photosynthesis")).toBe(true);
+    expect(documents[0]!.sha256).toHaveLength(64);
+    expect(documents[0]!.sourceBytesSha256).toHaveLength(64);
+    expect(documents[0]!.mimeType).toBe("text/plain");
+    expect(documents[0]!.byteSize).toBeGreaterThanOrEqual(WEB_SOURCE_MIN_TEXT_LENGTH);
   });
 });
 

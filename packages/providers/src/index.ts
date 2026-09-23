@@ -6,5 +6,7 @@ export * from "./storage.ts";
 export * from "./usage.ts";
 export * from "./openai.ts";
 export * from "./gemini.ts";
+export * from "./brave-mcp.ts";
+export * from "./brave.ts";
 export * from "./elevenlabs.ts";
 export * from "./dispatch.ts";

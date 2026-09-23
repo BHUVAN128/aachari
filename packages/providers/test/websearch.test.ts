@@ -49,11 +49,11 @@ describe("Gemini web-grounded research transport", () => {
     await expect(searchGroundedText(route, "prompt")).rejects.toThrow(/web-search response did not include JSON text/);
   });
 
-  it("dispatches researchForCapability to the gemini search transport", async () => {
+  it("dispatches researchForCapability to the gemini search transport when rerouted by env", async () => {
     process.env.GEMINI_API_KEY = "env-key";
     const fetchMock = vi.fn(async () => jsonResponse(200, { candidates: [{ content: { parts: [{ text: "{}" }] } }] }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await researchForCapability("research-web", "prompt", { GEMINI_API_KEY: "env-key" });
+    const result = await researchForCapability("research-web", "prompt", { GEMINI_API_KEY: "env-key", RESEARCH_WEB_MODEL: "gemini/gemini-3.8-flash" });
     expect(result.value).toEqual({});
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

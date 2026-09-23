@@ -48,8 +48,16 @@ export const resolvedModelRef = (capability: ModelCapability, env?: NodeJS.Proce
 /** The env key that overrides a model capability's route, for operator display. */
 export const modelEnvKey = (capability: ModelCapability) => MODEL_ROUTES[capability].envKey;
 
-export const assertCapabilities = (domain: Domain) => {
-  const requiredCapabilities: Capability[] = ["planning", "verification", "research", "voice", "storage", "renderer"];
+/**
+ * Capabilities a run must have before any billable work. Web research is only
+ * required for source-less runs; a run with a user-supplied source must not be
+ * blocked on the Brave credential.
+ */
+export const requiredCapabilitiesFor = (sourceCount: number): Capability[] =>
+  sourceCount === 0 ? ["planning", "verification", "research", "voice", "storage", "renderer"] : ["planning", "verification", "voice", "storage", "renderer"];
+
+export const assertCapabilities = (domain: Domain, options: { sourceCount?: number } = {}) => {
+  const requiredCapabilities = requiredCapabilitiesFor(options.sourceCount ?? 0);
   void domain;
   const missing = resolveCapabilities(domain).filter((capability) => requiredCapabilities.includes(capability.capability) && !capability.available);
   if (missing.length) {

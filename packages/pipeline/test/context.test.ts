@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { ApprovedScriptSchema, FactPackSchema } from "@upcraft/contracts";
-import { buildSourceEvidenceMap, canonicalNarrationText, projectScriptContext, sourceEvidenceSegments } from "../src/context.ts";
+import { buildSourceEvidenceMap, buildSourceEvidenceMapWithOverlap, canonicalNarrationText, projectScriptContext, sourceEvidenceSegments } from "../src/context.ts";
 
 const sourceId = "11111111-1111-4111-8111-111111111111";
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -34,6 +34,20 @@ describe("token-safe context projections", () => {
     });
     expect(canonicalNarrationText(script)).toBe("First line\n\nSecond line");
     expect(Object.hasOwn(script, "fullText")).toBe(false);
+  });
+
+  it("keeps a definition straddling the segment target inside one primary segment and emits overlap evidence", () => {
+    const prefix = "Filler background sentence about light and water. ".repeat(150).trim();
+    const definition = "Photosynthesis is the light-driven splitting of water molecules into oxygen and hydrogen ions.";
+    const text = `${prefix} ${definition} ${"More detail follows. ".repeat(60).trim()}`;
+    const { map, overlaps, primaryJoin } = buildSourceEvidenceMapWithOverlap([{ id: sourceId, sha256: sha(text), extractedText: text }]);
+    expect(primaryJoin).toBe(text);
+    const segments = map.sources[0]!.segments;
+    expect(segments.length).toBeGreaterThan(1);
+    for (let index = 1; index < segments.length; index += 1) expect(segments[index]!.startOffset).toBe(segments[index - 1]!.endOffset);
+    expect(segments.some((segment) => segment.text.includes(definition))).toBe(true);
+    expect(overlaps.length).toBeGreaterThanOrEqual(segments.length - 1);
+    expect(overlaps.every((segment) => segment.overlap && segment.text.length <= 300)).toBe(true);
   });
 
   it("passes only blueprint-referenced claims to script generation", () => {

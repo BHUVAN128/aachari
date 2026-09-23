@@ -58,6 +58,20 @@ services:
         mc mb --ignore-existing local/upcraft-private
         mc anonymous set none local/upcraft-private
 
+  # Official Brave Search MCP server sidecar for source-less web research (s02).
+  # The worker launches a stdio client over `docker run` (see BRAVE_MCP_COMMAND /
+  # BRAVE_MCP_ARGS in .env.example); this service is an optional pinned reference
+  # for environments that prefer a long-lived container. Enable with:
+  #   docker compose -f infra/docker-compose.yml --profile brave up -d
+  brave-search-mcp:
+    image: mcp/brave-search:2.1.4
+    profiles: ["brave"]
+    stdin_open: true
+    environment:
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      BRAVE_API_KEY_FILE: ${BRAVE_API_KEY_FILE:-}
+    command: ["--transport", "stdio"]
+
 volumes:
   postgres-data:
   valkey-data:

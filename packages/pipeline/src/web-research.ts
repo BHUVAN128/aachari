@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { BraveGroundingSource } from "@upcraft/providers";
 import { isSupportedSourceContentType, parseHttpsUrl } from "./source-url.ts";
 
 /**
@@ -40,3 +42,57 @@ export const normalizeHttpsUrl = (raw: string): { url: string; key: string } | u
 /** Deterministic source-quality check applied before a fetched page may become a locked source. */
 export const isAcceptableWebSource = (params: { contentType: string; textLength: number; byteSize: number }): boolean =>
   isSupportedSourceContentType(params.contentType) && params.textLength >= WEB_SOURCE_MIN_TEXT_LENGTH && params.byteSize <= WEB_SOURCE_MAX_BYTES;
+
+/**
+ * Brave LLM Context sources. Brave already groups snippets per URL, so a document
+ * is the lossless join of its snippets — no second fetch and no re-parsing of an
+ * untrusted page. The same untrusted-input rules apply: HTTPS only, a minimum
+ * snippet length, and normalized-URL dedupe.
+ */
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
+export const joinBraveSnippets = (snippets: readonly string[]): string => snippets.join(" ").replace(/\s+/g, " ").trim();
+
+export const isAcceptableBraveSource = (source: Pick<BraveGroundingSource, "url" | "snippets">, minText: number = WEB_SOURCE_MIN_TEXT_LENGTH): boolean =>
+  normalizeHttpsUrl(source.url) !== undefined && joinBraveSnippets(source.snippets).length >= minText;
+
+export type BraveDocument = {
+  originalName: string;
+  sourceUrl: string;
+  retrievedUrl: string;
+  byteSize: number;
+  sha256: string;
+  sourceBytesSha256: string;
+  mimeType: string;
+  extractedText: string;
+};
+
+/**
+ * Joins Brave snippets per URL into citable documents, dropping insecure,
+ * too-short, duplicate, and oversized entries. Provenance covers both the
+ * extracted text hash and the raw snippet payload hash per URL.
+ */
+export const assembleBraveDocuments = (sources: ReadonlyArray<Pick<BraveGroundingSource, "url" | "snippets">>, max: number = WEB_SOURCE_MAX_SOURCES): BraveDocument[] => {
+  const seen = new Set<string>();
+  const documents: BraveDocument[] = [];
+  for (const source of sources) {
+    if (!isAcceptableBraveSource(source)) continue;
+    const normalized = normalizeHttpsUrl(source.url);
+    if (!normalized || seen.has(normalized.key)) continue;
+    const text = joinBraveSnippets(source.snippets);
+    const byteSize = Buffer.byteLength(text, "utf8");
+    if (byteSize > WEB_SOURCE_MAX_BYTES) continue;
+    seen.add(normalized.key);
+    documents.push({
+      originalName: source.url,
+      sourceUrl: source.url,
+      retrievedUrl: source.url,
+      byteSize,
+      sha256: sha256(text),
+      sourceBytesSha256: sha256(source.snippets.join("\n")),
+      mimeType: "text/plain",
+      extractedText: text,
+    });
+  }
+  return documents.slice(0, max);
+};

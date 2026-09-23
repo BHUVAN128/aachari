@@ -20,13 +20,15 @@ import type { ProviderUsageSnapshot } from "./usage.ts";
  * `GEMINI_VERIFIER_MODEL=openai/gpt-5.6-terra`).
  */
 
-export const PRICING_VERSION = "pricing/2026-09-17";
+export const PRICING_VERSION = "pricing/2026-09-23";
 
 const ELEVENLABS_CHARACTER_RATE_ENV = "ELEVENLABS_COST_MICRODOLLARS_PER_1K_CHARS";
+export const BRAVE_QUERY_RATE_ENV = "BRAVE_COST_MICRODOLLARS_PER_QUERY";
 
 type TokenPricing = { inputMicrounitsPerToken: number; outputMicrounitsPerToken: number };
 type CharacterPricing = { per1kCharsEnv: string };
-export type ModelPricing = TokenPricing | CharacterPricing | null;
+type QueryPricing = { perQueryEnv: string };
+export type ModelPricing = TokenPricing | CharacterPricing | QueryPricing | null;
 
 export type ModelRouteSpec = {
   capability: ModelCapability;
@@ -109,15 +111,19 @@ export const MODEL_ROUTES: Record<ModelCapability, ModelRouteSpec> = {
     pricing: { inputMicrounitsPerToken: 0.75, outputMicrounitsPerToken: 3.75 },
     fallback: { provider: "openai", model: "gpt-5.6-terra" },
   },
+  // Source-less runs retrieve authoritative pages through the official Brave
+  // Search MCP server (`brave_llm_context`), reached over stdio. There is no
+  // model fallback: retrieval is bounded by the five-attempt escalating-timeout
+  // ladder in `brave.ts`, auth/quota failures are terminal, and exhaustion
+  // surfaces as a visible client failure.
   "research-web": {
     capability: "research-web",
-    provider: "gemini",
-    envKey: "GEMINI_RESEARCH_MODEL",
-    defaultModel: "gemini-3.8-flash",
-    credentialEnv: ["GEMINI_API_KEY"],
+    provider: "brave",
+    envKey: "RESEARCH_WEB_MODEL",
+    defaultModel: "llm-context/v1",
+    credentialEnv: ["BRAVE_API_KEY"],
     transport: "native",
-    pricing: { inputMicrounitsPerToken: 0.75, outputMicrounitsPerToken: 3.75 },
-    fallback: { provider: "openai", model: "gpt-5.6-terra" },
+    pricing: { perQueryEnv: BRAVE_QUERY_RATE_ENV },
   },
   illustration: {
     capability: "illustration",
@@ -160,7 +166,7 @@ export const STAGE_CAPABILITIES: Record<StageName, ModelCapability | null> = {
   "release-record": null,
 };
 
-const KNOWN_PROVIDERS: readonly ProviderId[] = ["openai", "gemini", "elevenlabs", "ai-gateway", "deterministic"];
+const KNOWN_PROVIDERS: readonly ProviderId[] = ["openai", "gemini", "elevenlabs", "ai-gateway", "brave", "deterministic"];
 
 const isProviderId = (value: string): value is ProviderId => (KNOWN_PROVIDERS as readonly string[]).includes(value);
 
@@ -251,6 +257,11 @@ export const estimateCostMicrounits = (provider: ProviderId | string, usage: Pro
     const perThousandCharacters = Number(env[ELEVENLABS_CHARACTER_RATE_ENV]);
     if (!Number.isFinite(perThousandCharacters) || usage.inputCharacters === undefined) return undefined;
     return Math.ceil((usage.inputCharacters / 1_000) * perThousandCharacters);
+  }
+  if (provider === "brave") {
+    const perQuery = Number(env[BRAVE_QUERY_RATE_ENV]);
+    if (!Number.isFinite(perQuery)) return undefined;
+    return Math.round((usage.queries ?? 1) * perQuery);
   }
   if (!isProviderId(provider)) return undefined;
   const rate = tokenRateFor(provider);

@@ -20,7 +20,7 @@ change-control process in [`AGENTS.md`](../../AGENTS.md).
 **Executable source of truth:** [`MODEL_ROUTES` / `STAGE_CAPABILITIES`](../../packages/providers/src/model-config.ts)
 in `packages/providers/src/model-config.ts`. Stage identifiers and order come from
 `STAGE_ORDER` in `packages/contracts/src/index.ts`. This document is a snapshot
-of the 2026-09-17 pricing/routing state (`PRICING_VERSION = "pricing/2026-09-17"`)
+of the 2026-09-23 pricing/routing state (`PRICING_VERSION = "pricing/2026-09-23"`)
 and must be re-checked against those files whenever a route or stage changes.
 
 Stage aliases (`s01`–`s16`) are declared in
@@ -35,7 +35,7 @@ Stage aliases (`s01`–`s16`) are declared in
 | `fact-verification` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
 | `script-verification` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
 | `qa-review` | Gemini 3.8 Flash | `gemini` | `GEMINI_VERIFIER_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Fallback `openai/gpt-5.6-terra`. |
-| `research-web` | Gemini 3.8 Flash | `gemini` | `GEMINI_RESEARCH_MODEL` | `gemini-3.8-flash` | 0.75 / 3.75 µ$ | Paid Google Search grounding for source-less runs; fallback `openai/gpt-5.6-terra`. |
+| `research-web` | Brave LLM Context | `brave` | `RESEARCH_WEB_MODEL` | `llm-context/v1` | Per-query rate via `BRAVE_COST_MICRODOLLARS_PER_QUERY` | Official `@brave/brave-search-mcp-server@2.1.4` over stdio for source-less runs. No fallback; bounded 5-attempt escalating-timeout ladder, string-classified auth/quota terminal, schema asserted at init. |
 | `illustration` | Gemini 3.1 Flash Image | `gemini` | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` | — | Policy `outputMime: image/png`. No coded fallback. |
 | `narration` | ElevenLabs v2 Multilingual | `elevenlabs` | `ELEVENLABS_MODEL_ID` | `eleven_multilingual_v2` | Character rate via `ELEVENLABS_COST_MICRODOLLARS_PER_1K_CHARS` | One consistent voice + alignment timestamps. |
 
@@ -74,13 +74,14 @@ are from `video-generation-process.md` §1.
 ### s02 `research` — M2 Research & fact pack
 
 - **Model route:** `planning` → `openai/gpt-5.6-terra` (`OPENAI_PLANNING_MODEL`).
-  Source-less runs first call `research-web` → `gemini/gemini-3.8-flash`
-  (`GEMINI_RESEARCH_MODEL`) with paid Google Search grounding.
+  Source-less runs first call `research-web` → `brave/llm-context/v1`
+  (`RESEARCH_WEB_MODEL`) against the pinned Brave Search MCP server.
 - **AI work:** one planning call turns the frozen source snapshot into a
   `fact-pack/v2` with material claim-to-source links. When the run has no source,
-  `research-web` retrieves 2-4 authoritative pages, applies deterministic
-  HTTPS/length/dedupe checks, and persists them as ordinary `source_documents`
-  with full provenance. `source-evidence-map/v1` is deterministic (sentence-aware
+  `research-web` calls `brave_llm_context` (five-attempt escalating-timeout ladder,
+  no model fallback), applies deterministic HTTPS/length/dedupe checks, and
+  persists the returned per-URL snippets as ordinary `source_documents` with full
+  provenance. `source-evidence-map/v1` is deterministic (sentence-aware
   segmentation with marked overlap).
 - **Benchmarks / gate:** Research — 100% cited material claims; no unsupported
   high-stakes claim. Web source provenance — 100% of web-sourced runs have

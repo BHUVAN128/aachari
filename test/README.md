@@ -77,6 +77,7 @@ node test/pipeline/setup/run-stage.ts s02 --input photosynthesis
 
 # a step test with assertions (blocked steps exit non-zero only on real failure)
 node test/pipeline/steps/s02-research/test.ts
+node test/pipeline/steps/s02-research/brave/test.ts   # Brave retrieval, deterministic, zero network
 node test/pipeline/steps/s01-preflight/test.ts   # deterministic guardrails, no provider keys needed
 
 # the whole green chain (writes a combined log + cost total)
@@ -85,7 +86,11 @@ node test/pipeline/setup/run-all.ts
 # type check the harness
 npx tsc -p test/pipeline/tsconfig.json
 ```
-`--input` accepts `photosynthesis`, `adversarial-segmentation`, `medical-adjacent`.
+`--input` accepts `photosynthesis`, `photosynthesis-sourceless`, `adversarial-segmentation`, `medical-adjacent`.
+
+Source-less runs (`photosynthesis-sourceless`) exercise the Brave Search MCP
+retrieval path; its sandbox double and deterministic suite live in
+`steps/s02-research/brave/`.
 
 ## Promotion criteria (Phase 6)
 - Every `STATUS.md` step, gap, and workflow box ticked by a real unblocked run.

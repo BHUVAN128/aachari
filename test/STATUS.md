@@ -32,7 +32,7 @@ to `packages/pipeline` at Phase 6.
 
 | Gap | Where it lives now | Promoted to | Deterministic tests | Promoted |
 | --- | --- | --- | --- | --- |
-| Gap 3 semantic segmentation | `steps/s02-research/segmentation.ts` | `packages/pipeline/src/context.ts` | [x] | [ ] |
+| Gap 3 semantic segmentation | `packages/pipeline/src/context.ts` | `packages/pipeline/src/context.ts` | [x] | [x] |
 | Gap 1 verifier-rejection loop | `steps/s03-fact-verification/verifier-loop.ts`, `steps/s05-script/script-verification.ts` | `packages/pipeline/src/verification.ts` + s03/s05 | [x] | [ ] |
 | Gap 4 transport hardening | `steps/s02-research/transport-hardening.ts` | `packages/providers/src/errors.ts`, `openai.ts`, `gemini.ts`, `elevenlabs.ts` | [x] | [ ] |
 | Gap 2 visual pacing | `steps/s05-script/pacing.ts`, `steps/s08-voiceover/line-synthesis.ts` | `prompts/script.ts`, `providers/elevenlabs.ts`, `contracts` | [x] | [ ] |
@@ -61,6 +61,17 @@ to `packages/pipeline` at Phase 6.
 | Source-less run → web source rows → valid evidence map | `packages/pipeline/test/research-web.test.ts` | [x] |
 | Research-web model route assertion | `packages/pipeline/test/model-route.test.ts` | [x] |
 | Medical domain/clinician removal (domain, DB, approvals, capabilities) | `packages/pipeline/test/domain-qa.test.ts`, `approvals-policy.test.ts` | [x] |
+
+## Brave web research (s02, source-less runs — sandbox + promoted)
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| MCP stdio client, string classifier, pinned-schema assertion (`@brave/brave-search-mcp-server@2.1.4`) | `packages/providers/src/brave-mcp.ts` | `test/pipeline/steps/s02-research/brave/test.ts`, `packages/providers/test/brave.test.ts` | [ ] | [x] |
+| Five-attempt escalating-timeout ladder, grounding parse | `packages/providers/src/brave.ts` | same | [ ] | [x] |
+| Untrusted-input policy + per-URL documents | `packages/pipeline/src/web-research.ts` | `packages/pipeline/test/research-web.test.ts` | n/a | [x] |
+| s02 retrieval branch (Brave, no fallback) | `packages/pipeline/src/pipeline/stages/s02-research.ts` | `test/pipeline/steps/s02-research/brave/test.ts` | [ ] | [x] |
+| Deterministic double + DB-backed retrieval runner | `steps/s02-research/brave/fake-brave-mcp.ts`, `research-brave.ts` | same | n/a | n/a |
+| Source-less run creation (zero-source `createVideoRun`) | `packages/pipeline/src/runs.ts` | same | n/a | [x] |
 
 ## Preflight hardening (s01 — sandbox, post-freeze)
 

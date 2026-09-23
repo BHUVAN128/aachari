@@ -27,7 +27,7 @@ export const createVideoRun = async (rawInput: CreateRunInput) => {
       snapshotHash: hash(snapshot),
       status: "queued",
     });
-    await tx.insert(sourceDocuments).values(input.sources.map((source, index) => {
+    if (input.sources.length) await tx.insert(sourceDocuments).values(input.sources.map((source, index) => {
       const extractedText = source.kind === "url" ? null : source.kind === "file" ? source.extractedText : source.value;
       const sourceValue = source.kind === "file" ? source.extractedText : source.value;
       const contentHash = createHash("sha256").update(extractedText ?? sourceValue).digest("hex");

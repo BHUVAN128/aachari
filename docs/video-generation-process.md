@@ -45,7 +45,7 @@ Run status is explicit: `queued`, `running`, `awaiting_approval`, `failed`, or `
 | Module | Locked inputs | Typed output | Gate | Token cost |
 | --- | --- | --- | --- | --- |
 | M1 Intake & routing | Request + optional supplied source | `intake-brief/v3` (extraction, normalized to a complete brief) + `input-snapshot/v1` + run identity | Safety gate + capability preflight | 1 safety-classification call + 1 briefing call |
-| M2 Research & fact pack | Frozen snapshot + source snapshot (web-retrieved when none supplied) | `source-evidence-map/v1`, `fact-pack/v2` | Claim-to-source completeness | 1 research-web call (source-less runs) + 1 planning + 1 verifier call |
+| M2 Research & fact pack | Frozen snapshot + source snapshot (web-retrieved when none supplied) | `source-evidence-map/v1`, `fact-pack/v2` | Claim-to-source completeness | 1 Brave LLM Context retrieval (bounded 5-attempt ladder, source-less runs) + 1 planning + 1 verifier call |
 | M3 Lesson blueprint | Verified fact pack | `lesson-blueprint/v1` | Learning-objective coverage | 1 planning call |
 | M4 Script approval | Blueprint + fact pack | `approved-script/v2` | Independent script verification | 1 planning + 1 verifier call |
 | M5 Visual bible | Approved script | `visual-bible/v1` | Continuity/safe-area lock | 1 planning call |
@@ -66,7 +66,7 @@ Collect topic, target learner level, language, duration, aspect ratio, brand/sty
 
 ## §3 M2 Research & fact pack — sequential
 
-Retrieve authoritative, topic-appropriate sources. When the run was created without a user-supplied source, the `research-web` route performs paid web search and retrieval and persists the retrieved pages as ordinary `source_documents` rows with full provenance (source URL, retrieved URL, SHA-256, retrieval time). The user-supplied source is optional; the system, not the user, supplies the source when it is absent. Extract only the facts, definitions, calculations, caveats, and citations required for the stated learning objective. Record material claim-to-source links, stable source locators or snapshots, retrieval time, and source suitability. Independently verify every material claim before planning.
+Retrieve authoritative, topic-appropriate sources. When the run was created without a user-supplied source, the `research-web` route calls the official Brave Search MCP server's `brave_llm_context` tool (pinned v2.1.4) and persists the returned per-URL snippets as ordinary `source_documents` rows with full provenance (source URL, retrieved URL, SHA-256, retrieval time). Retrieval is bounded by a five-attempt escalating-timeout ladder with jittered backoff; auth/quota failures are terminal and never retried, and exhaustion leaves the run visibly failed with a client-safe message. The client asserts the pinned tool schema at initialization so a narrowed schema blocks instead of silently disabling the ladder. The user-supplied source is optional; the system, not the user, supplies the source when it is absent. Extract only the facts, definitions, calculations, caveats, and citations required for the stated learning objective. Record material claim-to-source links, stable source locators or snapshots, retrieval time, and source suitability. Independently verify every material claim before planning.
 
 **Why:** the script must be written from evidence, rather than asking a model to remember science or medicine from training data. Routing every run through the same locked-source/evidence-map path preserves reproducibility whether the source came from the user or from the web.
 

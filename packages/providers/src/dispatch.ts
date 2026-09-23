@@ -2,6 +2,7 @@ import type { ModelCapability, ModelRoute } from "@upcraft/contracts";
 import { resolveModelRoute } from "./model-config.ts";
 import { generateStructuredText, generateJsonText } from "./openai.ts";
 import { searchGroundedText, verifyClaims } from "./gemini.ts";
+import { runBraveResearch } from "./brave.ts";
 import type { ProviderResult } from "./usage.ts";
 
 /**
@@ -50,5 +51,12 @@ export const researchForCapability = async (
 export const researchWithRoute = async (route: ModelRoute, prompt: string): Promise<ProviderResult<Record<string, unknown>>> => {
   if (route.provider === "gemini") return searchGroundedText(route, prompt);
   if (route.provider === "openai") return generateJsonText(route, prompt);
+  if (route.provider === "brave") {
+    const research = await runBraveResearch(route, { query: prompt });
+    return {
+      value: { schemaVersion: "research-web/v1", query: research.query, sources: research.sources.map((source) => ({ url: source.url, title: source.title, reason: "brave-llm-context" })) },
+      usage: { model: route.model, queries: research.attempts.length, inputCharacters: prompt.length },
+    };
+  }
   throw new Error(`No web-research transport for provider ${route.provider}`);
 };

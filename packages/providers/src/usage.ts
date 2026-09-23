@@ -7,6 +7,8 @@ export type ProviderUsageSnapshot = {
   reasoningTokens?: number | undefined;
   inputCharacters?: number | undefined;
   outputCharacters?: number | undefined;
+  /** Billable query units for per-query providers such as Brave LLM Context. */
+  queries?: number | undefined;
 };
 
 export type ProviderResult<T> = {

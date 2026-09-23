@@ -60,9 +60,10 @@ export const MODEL_CONFIG_VERSION = "model-config/v1";
 
 /**
  * Transport-level provider identity. `ai-gateway` fronts a concrete upstream
- * model whose identifier carries its own `provider/model` reference.
+ * model whose identifier carries its own `provider/model` reference. `brave` is
+ * the official Brave Search MCP server reached over stdio for web research.
  */
-export const ProviderIdSchema = z.enum(["openai", "gemini", "elevenlabs", "ai-gateway", "deterministic"]);
+export const ProviderIdSchema = z.enum(["openai", "gemini", "elevenlabs", "ai-gateway", "brave", "deterministic"]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
 /** A model-routed job named to mirror the model-recommendations job table. */

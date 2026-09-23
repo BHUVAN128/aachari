@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { FactPackSchema } from "@upcraft/contracts";
+import { FactPackSchema, type ModelRoute } from "@upcraft/contracts";
 import { getDb, sourceDocuments } from "@upcraft/db";
-import { generateStructuredText, researchWithRoute, resolveModelRoute } from "@upcraft/providers";
+import { generateStructuredText, researchWithRoute, resolveModelRoute, runBraveResearch } from "@upcraft/providers";
 import { saveArtifact, validationFeedback } from "../../artifacts/store.ts";
 import { sha, textSha } from "../../artifacts/hashing.ts";
 import { withFallback } from "../../fallback.ts";
 import { recordUsage } from "../../usage.ts";
 import { assertHttpsRedirect, isSupportedSourceContentType, parseHttpsUrl } from "../../source-url.ts";
-import { isAcceptableWebSource, normalizeHttpsUrl, parseWebResearchSources, WEB_SOURCE_MAX_SOURCES } from "../../web-research.ts";
+import { assembleBraveDocuments, isAcceptableWebSource, normalizeHttpsUrl, parseWebResearchSources, WEB_SOURCE_MAX_SOURCES } from "../../web-research.ts";
 import { buildSourceEvidenceMap, contextManifest, sourceEvidenceSegments } from "../../context.ts";
 import { factPackJsonSchema } from "../../prompts/fact-pack.ts";
 import { getRun } from "../../runs.ts";
@@ -33,6 +33,44 @@ const resolveSourceText = async (source: { extractedText: string | null; sourceU
 };
 
 /**
+ * Brave path (source-less runs). The official `brave_llm_context` tool already
+ * returns per-URL snippets joined into citable documents, so the retrieved text
+ * is persisted directly with full provenance instead of re-fetching each page.
+ * Every ladder attempt — success or failure — is written to the usage ledger.
+ */
+const gatherBraveSources = async (runId: string, route: ModelRoute): Promise<number> => {
+  const db = getDb();
+  const run = await getRun(runId);
+  if (!run) throw new Error("Run not found");
+  const research = await runBraveResearch(route, {
+    query: `${run.title} explained for ${run.snapshot.learningLevel}`,
+    onAttempt: async (record) => {
+      await recordUsage(runId, "research", route.provider, route.model, Date.now() - record.latencyMs, { model: route.model, queries: 1 }, "research-web/v1", { projection: "brave-llm-context/v1", attempt: record.attempt, thresholdMode: record.thresholdMode, broadened: record.broadened, timeoutMs: record.timeoutMs }, record.outcome, record.errorCode ?? undefined);
+    },
+  });
+  const documents = assembleBraveDocuments(research.sources);
+  if (!documents.length) throw new Error("Web research found no usable authoritative sources");
+  for (const document of documents) {
+    await db.insert(sourceDocuments).values({
+      id: randomUUID(),
+      runId,
+      kind: "url",
+      originalName: document.originalName,
+      sourceUrl: document.sourceUrl,
+      retrievedUrl: document.retrievedUrl,
+      retrievalStatus: "retrieved",
+      sourceByteSize: document.byteSize,
+      sha256: document.sha256,
+      sourceBytesSha256: document.sourceBytesSha256,
+      mimeType: document.mimeType,
+      extractedText: document.extractedText,
+      retrievedAt: new Date(),
+    });
+  }
+  return documents.length;
+};
+
+/**
  * Web-research fallback: when the run was created with no user-supplied source,
  * the system (not the user) supplies authoritative sources via the grounded
  * research-web route. Returned rows become ordinary `source_documents` with full
@@ -44,6 +82,7 @@ const gatherWebSources = async (ctx: StageContext, runId: string): Promise<numbe
   if (!run) throw new Error("Run not found");
   const startedAt = Date.now();
   const route = resolveModelRoute("research-web");
+  if (route.provider === "brave") return gatherBraveSources(runId, route);
   const raw = await withFallback(route, async (attemptRoute) => researchWithRoute(attemptRoute, `Find 2-4 authoritative, current web pages that teach the topic "${run.title}" for ${run.snapshot.learningLevel} (${run.snapshot.audienceCategory} audience) in ${run.snapshot.language}. Return JSON with schemaVersion "research-web/v1" and sources [{url, title, reason}]. Prefer stable .gov/.edu or recognized educational references over blogs. Every url must be a complete https:// URL.`), async (failedRoute, error) => {
     await recordUsage(runId, "research", failedRoute.provider, failedRoute.model, startedAt, { model: failedRoute.model }, "research-web/v1", { projection: "web-source-discovery/v1" }, "failed", error.code);
   });

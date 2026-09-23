@@ -127,7 +127,7 @@ export const runPreflightHarness = async (params: {
 
   // Compliance passed. Now the real production capability/storage preflight.
   try {
-    assertCapabilities(run.domain);
+    assertCapabilities(run.domain, { sourceCount: sourceRows.length });
   } catch (error) {
     const reason = error instanceof Error ? error.message : "capability preflight is unavailable";
     await log(`BLOCKED (credential) ${reason}`);

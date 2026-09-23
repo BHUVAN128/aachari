@@ -41,8 +41,10 @@ describe("stage model routing", () => {
     expect(generator?.capability).toBe("planning");
   });
 
-  it("routes source-less web research to the approved search-grounded provider", () => {
-    expect(resolveModelRoute("research-web")).toMatchObject({ capability: "research-web", provider: "gemini", model: "gemini-3.8-flash", resolvedFrom: "default" });
-    expect(MODEL_ROUTES["research-web"].credentialEnv).toEqual(["GEMINI_API_KEY"]);
+  it("routes source-less web research to the pinned Brave Search MCP route with no fallback", () => {
+    expect(resolveModelRoute("research-web")).toMatchObject({ capability: "research-web", provider: "brave", model: "llm-context/v1", resolvedFrom: "default" });
+    expect(MODEL_ROUTES["research-web"].credentialEnv).toEqual(["BRAVE_API_KEY"]);
+    expect(MODEL_ROUTES["research-web"].fallback).toBeUndefined();
+    expect(MODEL_ROUTES["research-web"].pricing).toEqual({ perQueryEnv: "BRAVE_COST_MICRODOLLARS_PER_QUERY" });
   });
 });

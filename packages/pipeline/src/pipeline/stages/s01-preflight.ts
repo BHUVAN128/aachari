@@ -9,7 +9,7 @@ export const runPreflight = async (ctx: StageContext): Promise<unknown> => {
   const { runId } = ctx;
   const run = await getRun(runId);
   if (!run) throw new Error("Run not found");
-  assertCapabilities(run.domain);
+  assertCapabilities(run.domain, { sourceCount: run.snapshot.sourceIds.length });
   await assertStorageAvailable();
   return saveArtifact({ runId, stage: "preflight", role: "capability-report", schemaVersion: "capability-report/v1", inputHash: sha(run.snapshot), content: { checkedAt: new Date().toISOString(), domain: run.domain, renderer: "@remotion/renderer" } });
 };
