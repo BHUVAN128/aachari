@@ -1,4 +1,4 @@
-import { ApprovedScriptSchema, BlueprintSchema, FactPackSchema, VisualBibleSchema } from "@upcraft/contracts";
+import { ApprovedScriptSchema, BlueprintSchema, VerifiedFactPackSchema, VisualBibleSchema } from "@upcraft/contracts";
 import { saveArtifact, requireContent } from "../../../artifacts/store.ts";
 import { sha } from "../../../artifacts/hashing.ts";
 import { getRun } from "../../../runs.ts";
@@ -25,12 +25,12 @@ export const runAssets = async (ctx: StageContext): Promise<unknown> => {
   const { runId } = ctx;
   const [scriptArtifact, bibleArtifact, blueprintArtifact, factArtifact, run] = await Promise.all([
     ctx.getArtifact(runId, "approved-script"), ctx.getArtifact(runId, "visual-bible"),
-    ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "fact-pack"), getRun(runId),
+    ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "verified-fact-pack"), getRun(runId),
   ]);
   const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
   const bible = VisualBibleSchema.parse(requireContent(bibleArtifact, "visual-bible"));
   const blueprint = BlueprintSchema.parse(requireContent(blueprintArtifact, "lesson-blueprint"));
-  const factPack = FactPackSchema.parse(requireContent(factArtifact, "fact-pack"));
+  const factPack = VerifiedFactPackSchema.parse(requireContent(factArtifact, "verified-fact-pack"));
   if (!run) throw new Error("Run not found");
   const inputHash = sha([script, bible, blueprint, factPack]);
   const existing = await ctx.getArtifact(runId, "selected-assets");

@@ -150,7 +150,7 @@ export const expectedPlateIds = (model: Pick<DiagramModel, "kind" | "labels" | "
   }
 };
 
-export const buildSceneDirections = (params: { blueprint: { scenes: BlueprintScene[] }; script: ApprovedScript; factPack: FactPack }): SceneDirection[] => {
+export const buildSceneDirections = (params: { blueprint: { scenes: BlueprintScene[] }; script: ApprovedScript; factPack: Pick<FactPack, "claims"> }): SceneDirection[] => {
   const claimText = new Map(params.factPack.claims.map((claim) => [claim.id, claim.text]));
   return params.blueprint.scenes
     .slice()

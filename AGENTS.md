@@ -39,6 +39,9 @@ development surface is `test/pipeline/` (the step harness described in
 - Harden, prototype, and iterate on pipeline behavior inside `test/pipeline/`
   first. Sandbox-local schemas, policies, and gap-fix modules live there and are
   proven by deterministic harness tests before any promotion.
+- Work inside `test/` is **pre-approved**: create, edit, move, and delete files
+  under `test/pipeline/` without asking for confirmation, then run the harness gate
+  (`npx tsc -p test/pipeline/tsconfig.json` plus the affected `test.ts`).
 - Do **not** modify `apps/`, `packages/`, `infra/`, `scripts/`, or the governing
   documents in `docs/` without asking the user first and receiving explicit
   approval for that exact change. Reading and inspecting them is always allowed.

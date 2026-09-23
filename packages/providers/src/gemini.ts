@@ -1,5 +1,6 @@
 import type { ModelRoute } from "@upcraft/contracts";
 import { asProviderError } from "./errors.ts";
+import { parseVerifierJson } from "./json-extraction.ts";
 import type { ProviderResult } from "./usage.ts";
 
 const required = (name: string) => {
@@ -25,7 +26,7 @@ export const verifyClaims = async (route: ModelRoute, prompt: string): Promise<P
   const text = result.candidates?.[0]?.content?.parts?.find((part) => part.text)?.text;
   if (!text) throw new Error("Gemini verification response did not include JSON text");
   return {
-    value: JSON.parse(text) as Record<string, unknown>,
+    value: parseVerifierJson(text),
     usage: {
       requestId: result.responseId,
       model,

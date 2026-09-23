@@ -4,6 +4,7 @@ export * from "./model-config.ts";
 export * from "./safety.ts";
 export * from "./storage.ts";
 export * from "./usage.ts";
+export * from "./json-extraction.ts";
 export * from "./openai.ts";
 export * from "./gemini.ts";
 export * from "./brave-mcp.ts";

@@ -1,4 +1,4 @@
-import { ApprovedScriptSchema, FactPackSchema, ScriptVerificationSchema } from "@upcraft/contracts";
+import { ApprovedScriptSchema, ScriptVerificationSchema, VerifiedFactPackSchema } from "@upcraft/contracts";
 import { generateStructuredText, resolveModelRoute, reviewWithRoute } from "@upcraft/providers";
 import { saveArtifact, requireContent, validationFeedback } from "../../artifacts/store.ts";
 import { sha } from "../../artifacts/hashing.ts";
@@ -15,10 +15,10 @@ type Json = Record<string, unknown>;
 /** §5 M4 Script approval — write narration, then independently verify it. */
 export const runScript = async (ctx: StageContext): Promise<unknown> => {
   const { runId } = ctx;
-  const [blueprint, factPack] = await Promise.all([ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "fact-pack")]);
+  const [blueprint, factPack] = await Promise.all([ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "verified-fact-pack")]);
   const startedAt = Date.now();
   const blueprintContent = requireContent<{ scenes: Array<{ id: string; claimIds: string[]; purpose: string; visualBeat: string }> }>(blueprint, "lesson-blueprint");
-  const factPackContent = FactPackSchema.parse(requireContent(factPack, "fact-pack"));
+  const factPackContent = VerifiedFactPackSchema.parse(requireContent(factPack, "verified-fact-pack"));
   const scriptContext = projectScriptContext(factPackContent, blueprintContent);
   const run = await getRun(runId);
   if (!run) throw new Error("Run not found");

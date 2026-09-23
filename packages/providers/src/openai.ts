@@ -1,5 +1,6 @@
 import type { ModelRoute } from "@upcraft/contracts";
 import { asProviderError } from "./errors.ts";
+import { parseVerifierJson } from "./json-extraction.ts";
 import type { ProviderResult } from "./usage.ts";
 
 const required = (name: string) => {
@@ -80,5 +81,5 @@ export const generateJsonText = async (route: ModelRoute, prompt: string): Promi
   });
   const outputText = extractText(payload);
   const usage = usageFrom(payload, route.model, prompt.length, outputText.length);
-  return { value: JSON.parse(outputText) as Record<string, unknown>, usage: { ...usage, requestId: usage.requestId ?? requestId } };
+  return { value: parseVerifierJson(outputText), usage: { ...usage, requestId: usage.requestId ?? requestId } };
 };

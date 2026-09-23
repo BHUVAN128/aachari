@@ -65,7 +65,7 @@ export type StructuralQaInput = {
   domainPolicy?: {
     domain: Domain;
     script: ApprovedScript;
-    factPack: FactPack;
+    factPack: Pick<FactPack, "claims" | "caveats">;
     blueprint: { objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> };
     diagramLabels: string[];
     assets: Array<{ role: string; provenance: Record<string, unknown> | null }>;

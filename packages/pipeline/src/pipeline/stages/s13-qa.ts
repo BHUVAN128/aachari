@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { ApprovedScriptSchema, ConsolidatedReviewSchema, DiagramModelSchema, FactPackSchema, ProjectManifestSchema, ResolvedLayoutSchema, VisualBibleSchema, type WordTiming } from "@upcraft/contracts";
+import { ApprovedScriptSchema, ConsolidatedReviewSchema, DiagramModelSchema, ProjectManifestSchema, ResolvedLayoutSchema, VerifiedFactPackSchema, VisualBibleSchema, type WordTiming } from "@upcraft/contracts";
 import { getDb, mediaAssets, qaFindings } from "@upcraft/db";
 import { getPrivateObject, resolveModelRoute, reviewWithRoute } from "@upcraft/providers";
 import { probeAudioDurationMs, probeLoudness, probeMedia, type MediaProbe } from "@upcraft/compositor";
@@ -42,7 +42,7 @@ export const runQa = async (ctx: StageContext): Promise<unknown> => {
   const { runId } = ctx;
   const [captionArtifact, manifestArtifact, previewArtifact, factArtifact, scriptArtifact, layoutArtifact, assets, run, selectedAssetsArtifact, blueprintArtifact, bibleArtifact] = await Promise.all([
     ctx.getArtifact(runId, "caption-timings"), ctx.getArtifact(runId, "project-manifest"), ctx.getArtifact(runId, "preview-render"),
-    ctx.getArtifact(runId, "fact-pack"), ctx.getArtifact(runId, "approved-script"), ctx.getArtifact(runId, "resolved-layout"),
+    ctx.getArtifact(runId, "verified-fact-pack"), ctx.getArtifact(runId, "approved-script"), ctx.getArtifact(runId, "resolved-layout"),
     getDb().select().from(mediaAssets).where(and(eq(mediaAssets.runId, runId), eq(mediaAssets.selected, true))),
     getRun(runId), ctx.getArtifact(runId, "selected-assets"),
     ctx.getArtifact(runId, "lesson-blueprint"), ctx.getArtifact(runId, "visual-bible"),
@@ -51,13 +51,13 @@ export const runQa = async (ctx: StageContext): Promise<unknown> => {
   const manifest = ProjectManifestSchema.parse(requireContent(manifestArtifact, "project-manifest"));
   const script = ApprovedScriptSchema.parse(requireContent(scriptArtifact, "approved-script"));
   const bible = VisualBibleSchema.parse(requireContent(bibleArtifact, "visual-bible"));
-  const requiredArtifacts: Array<[string, unknown]> = [["fact-pack", factArtifact], ["approved-script", scriptArtifact], ["resolved-layout", layoutArtifact], ["project-manifest", manifestArtifact], ["lesson-blueprint", blueprintArtifact], ["visual-bible", bibleArtifact]];
+  const requiredArtifacts: Array<[string, unknown]> = [["verified-fact-pack", factArtifact], ["approved-script", scriptArtifact], ["resolved-layout", layoutArtifact], ["project-manifest", manifestArtifact], ["lesson-blueprint", blueprintArtifact], ["visual-bible", bibleArtifact]];
   const missingArtifacts = requiredArtifacts.filter(([, artifact]) => !artifact).map(([role]) => role);
   const scriptSceneCount = new Set(script.narration.map((line) => line.sceneId)).size;
 
   const selectedAssetsContent = selectedAssetsArtifact?.content as { diagramKinds?: Array<{ labels?: string[] }>; diagramModels?: unknown[] } | undefined;
   const diagramLabels = selectedAssetsContent?.diagramKinds?.flatMap((entry) => entry.labels ?? []) ?? [];
-  const factPack = factArtifact ? FactPackSchema.parse(requireContent(factArtifact, "fact-pack")) : undefined;
+  const factPack = factArtifact ? VerifiedFactPackSchema.parse(requireContent(factArtifact, "verified-fact-pack")) : undefined;
   const blueprint = blueprintArtifact ? requireContent<{ objective: string; scenes: Array<{ id: string; purpose: string; visualBeat: string }> }>(blueprintArtifact, "lesson-blueprint") : undefined;
   const diagramModels = (selectedAssetsContent?.diagramModels ?? []).flatMap((model) => {
     const parsed = DiagramModelSchema.safeParse(model);

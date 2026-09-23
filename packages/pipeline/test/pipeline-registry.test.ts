@@ -36,7 +36,16 @@ describe("pipeline stage registry", () => {
   });
 
   it("never lets asset production read a downstream artifact or a pre-asset stage self-reference", () => {
-    expect(stageInputRoles.assets).toEqual(["approved-script", "visual-bible", "lesson-blueprint", "fact-pack"]);
+    expect(stageInputRoles.assets).toEqual(["approved-script", "visual-bible", "lesson-blueprint", "verified-fact-pack"]);
+  });
+
+  it("makes every post-verification stage consume the verified fact pack, never the raw one", () => {
+    expect(stageInputRoles.blueprint).toEqual(["verified-fact-pack"]);
+    expect(stageInputRoles.script).toEqual(["lesson-blueprint", "verified-fact-pack"]);
+    expect(stageInputRoles.qa).toContain("verified-fact-pack");
+    for (const stage of ["blueprint", "script", "assets", "qa"] as const) {
+      expect(stageInputRoles[stage]).not.toContain("fact-pack");
+    }
   });
 
   it("runs the text chain in governing order and keeps QA before approval before final render", () => {

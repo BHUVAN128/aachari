@@ -276,6 +276,30 @@ export const FactPackSchema = z.object({
 });
 export type FactPack = z.infer<typeof FactPackSchema>;
 
+/** A non-critical claim dropped at verifier exhaustion, recorded so the release is honest. */
+export const VerifiedClaimOmissionSchema = z.object({
+  claimId: z.string().uuid(),
+  text: z.string().min(1),
+  rationale: z.string().min(1),
+  attempts: z.number().int().positive(),
+});
+export type VerifiedClaimOmission = z.infer<typeof VerifiedClaimOmissionSchema>;
+
+/**
+ * The release-grade fact pack produced by M2 verification. It carries only claims
+ * the independent verifier accepted plus an explicit record of any non-critical
+ * claim dropped at exhaustion. A critical claim can never become an omission.
+ */
+export const VerifiedFactPackSchema = z.object({
+  schemaVersion: z.literal("verified-fact-pack/v1"),
+  claims: z.array(ClaimSchema),
+  caveats: z.array(z.object({ text: z.string().min(1), evidence: SourceEvidenceRefSchema.optional() })),
+  omissions: z.array(VerifiedClaimOmissionSchema),
+  attempts: z.number().int().positive(),
+  verifierModel: z.string().min(1).nullable(),
+});
+export type VerifiedFactPack = z.infer<typeof VerifiedFactPackSchema>;
+
 export const BlueprintSceneSchema = z.object({
   id: z.string().uuid(),
   order: z.number().int().nonnegative(),

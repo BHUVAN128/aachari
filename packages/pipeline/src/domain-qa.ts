@@ -11,7 +11,7 @@ const UNIT_PATTERN = /\b\d+(?:[.,]\d+)?\s?(?:kg|g|mg|µg|ug|km|cm|mm|nm|µm|um|m
 const ASSUMPTION_PATTERN = /\b(assum\w*|given that|treat\w*|neglect\w*|ideal|approximately|approximate|constant|ignoring)\b/i;
 const CALCULATION_PATTERN = /[=×÷]|\d\s*[*+\-/^]\s*\d|\b(sum|total|therefore|hence|calculate|compute|ratio|rate)\b/i;
 
-export const engineeringCorpus = (params: { script: ApprovedScript; factPack: FactPack; diagramLabels: string[] }) =>
+export const engineeringCorpus = (params: { script: ApprovedScript; factPack: Pick<FactPack, "claims" | "caveats">; diagramLabels: string[] }) =>
   [
     params.factPack.claims.map((claim) => claim.text).join(" "),
     params.factPack.caveats.map((caveat) => caveat.text).join(" "),
@@ -20,7 +20,7 @@ export const engineeringCorpus = (params: { script: ApprovedScript; factPack: Fa
   ].join(" ");
 
 /** Engineering lessons must show units, assumptions, and calculation steps. */
-export const validateEngineeringContent = (params: { domain: Domain; script: ApprovedScript; factPack: FactPack; diagramLabels: string[] }): DomainIssue[] => {
+export const validateEngineeringContent = (params: { domain: Domain; script: ApprovedScript; factPack: Pick<FactPack, "claims" | "caveats">; diagramLabels: string[] }): DomainIssue[] => {
   if (params.domain !== "engineering") return [];
   const corpus = engineeringCorpus(params);
   const issues: DomainIssue[] = [];

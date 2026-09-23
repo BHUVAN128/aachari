@@ -33,7 +33,7 @@ to `packages/pipeline` at Phase 6.
 | Gap | Where it lives now | Promoted to | Deterministic tests | Promoted |
 | --- | --- | --- | --- | --- |
 | Gap 3 semantic segmentation | `packages/pipeline/src/context.ts` | `packages/pipeline/src/context.ts` | [x] | [x] |
-| Gap 1 verifier-rejection loop | `steps/s03-fact-verification/verifier-loop.ts`, `steps/s05-script/script-verification.ts` | `packages/pipeline/src/verification.ts` + s03/s05 | [x] | [ ] |
+| Gap 1 verifier-rejection loop | `steps/s03-fact-verification/verifier-loop.ts`, `steps/s05-script/script-verification.ts` | `packages/pipeline/src/verification.ts` + s03/s05 | [x] | [x] |
 | Gap 4 transport hardening | `steps/s02-research/transport-hardening.ts` | `packages/providers/src/errors.ts`, `openai.ts`, `gemini.ts`, `elevenlabs.ts` | [x] | [ ] |
 | Gap 2 visual pacing | `steps/s05-script/pacing.ts`, `steps/s08-voiceover/line-synthesis.ts` | `prompts/script.ts`, `providers/elevenlabs.ts`, `contracts` | [x] | [ ] |
 
@@ -97,18 +97,21 @@ in `steps/s03-fact-verification/test.ts`.
 
 | Item | Where it lives now | Deterministic tests | Live | Promoted |
 | --- | --- | --- | --- | --- |
-| A1 claim policy: classify + `verified-fact-pack/v1` omissions + bounded policy loop | `steps/s03-fact-verification/claim-policy.ts` | [x] | n/a | [ ] |
-| A2 claim-local evidence window (neighbours, cite tags, char budget) | `steps/s03-fact-verification/context-window.ts` | [x] | n/a | [ ] |
-| A3 verifier JSON extraction (fence strip, balanced object, throw-on-garbage) | `steps/s03-fact-verification/json-extraction.ts` | [x] | n/a | [ ] |
-| A4 claim-set replacement planner (delete+insert, no drop orphans) | `steps/s03-fact-verification/claim-store.ts` | [x] | n/a | [ ] |
-| A5 correction contract + ID-drift degradation | `steps/s03-fact-verification/verifier-loop.ts` | [x] | n/a | [ ] |
+| A1 claim policy: classify + `verified-fact-pack/v1` omissions + bounded policy loop | `packages/pipeline/src/verification.ts` | [x] | n/a | [x] |
+| A2 claim-local evidence window (neighbours, cite tags, char budget) | `packages/pipeline/src/context.ts` | [x] | n/a | [x] |
+| A3 verifier JSON extraction (fence strip, balanced object, throw-on-garbage) | `packages/providers/src/json-extraction.ts` | [x] | n/a | [x] |
+| A4 claim-set replacement planner (delete+insert, no drop orphans) | `packages/pipeline/src/verification.ts` | [x] | n/a | [x] |
+| A5 correction contract + ID-drift degradation | `packages/pipeline/src/verification.ts` | [x] | n/a | [x] |
 
-Promotion (Phase 6) is one user-approved change: `verified-fact-pack/v1` into
-`packages/contracts`, the policy reducers into `packages/pipeline/src/verification.ts`,
-`withEvidenceWindow` into `packages/pipeline/src/context.ts`, the bounded policy loop
-into the s03 handler, `parseVerifierJson` into both verifier transports, and the
-same-change governing-doc updates in `video-generation-process.md` and
-`benchmarkstofocus.md`.
+Promoted into `packages/` with regression suites in
+`packages/pipeline/test/verification-policy.test.ts`,
+`packages/pipeline/test/context-window.test.ts`,
+`packages/providers/test/json-extraction.test.ts`, and
+`packages/contracts/test/verified-fact-pack.test.ts`, plus the same-change
+governing-doc updates in `video-generation-process.md` and `benchmarkstofocus.md`.
+The s03 handler now regenerates only rejected claims through the planning route,
+replaces `source_claims` in one transaction, and emits `verified-fact-pack/v1`.
+The real verifier run still needs `GEMINI_API_KEY`.
 
 ## Intake hardening (s00 — sandbox, pre-run)
 
