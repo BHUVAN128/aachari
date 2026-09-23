@@ -9,6 +9,14 @@ import {
   type CorrectionPrompt,
 } from "./script-verification.ts";
 import { PacedApprovedScriptSchema, MAX_PAUSE_MS, pauseForVisualAction, sumPauses, validatePacing, validatePacedAudio } from "./pacing.ts";
+import {
+  SCRIPT_LANGUAGE_DIRECTIVE_EXHAUSTED,
+  ScriptLanguageDirectiveExhaustedError,
+  validateEntityDescriptionLanguage,
+  validateScriptLanguageDirective,
+  validateVisualActionLanguage,
+  runBoundedVisualActionLanguageLoop,
+} from "./language-directive.ts";
 
 /**
  * s05 — Script approval.
@@ -102,6 +110,62 @@ const main = async () => {
   const ok = validatePacedAudio({ script: paced, measuredDurationMs: 60_000 });
   assert.deepEqual(ok, []);
   console.log("  Gap 2: paced-audio duration gate works.");
+
+  // --- W3: English visualAction directive ---
+  const tamilNarration = "இலை ஒளிச்சேர்க்கையை விளக்குகிறது";
+  const localizedAction = tamilNarration;
+  const goodScript = {
+    schemaVersion: "approved-script/v2",
+    narration: [
+      { id: L1, sceneId: SCENE, text: tamilNarration, claimIds: [], visualAction: "Reveal the leaf" },
+      { id: L2, sceneId: SCENE, text: tamilNarration, claimIds: [], visualAction: "Inspect the label" },
+    ],
+  };
+  assert.deepEqual(validateScriptLanguageDirective(goodScript), [], "Tamil narration with English visualAction must pass");
+  assert.ok(pauseForVisualAction(goodScript.narration[0]!.visualAction) > 0 && pauseForVisualAction(goodScript.narration[1]!.visualAction) > 0, "every accepted visualAction must match the pacing vocabulary");
+  assert.equal(validateVisualActionLanguage(localizedAction)[0]?.rule, "script-visual-action-localized");
+  assert.equal(validateVisualActionLanguage("The leaf is shown")[0]?.rule, "script-visual-action-non-directive");
+  console.log("  W3: localized / non-directive visualAction rejected; English beats keep their dwell budget.");
+
+  // --- W3: s06 entity descriptions share the same leak vector ---
+  assert.equal(validateEntityDescriptionLanguage({ id: "e1", description: "பச்சையம்" })[0]?.rule, "bible-entity-description-localized");
+  assert.deepEqual(validateEntityDescriptionLanguage({ id: "e1", description: "A green chloroplast" }), []);
+
+  // --- W3: bounded repair — English visualAction fixed, narration untouched ---
+  const languageAttempts: string[] = [];
+  const repaired = await runBoundedVisualActionLanguageLoop({
+    generate: async (correction) => {
+      if (!correction) return { schemaVersion: "approved-script/v2", narration: [{ id: L1, sceneId: SCENE, text: tamilNarration, claimIds: [], visualAction: localizedAction }] };
+      assert.equal(correction.contract.length > 0, true);
+      return { schemaVersion: "approved-script/v2", narration: [{ id: L1, sceneId: SCENE, text: tamilNarration, claimIds: [], visualAction: "Reveal the leaf" }] };
+    },
+    onAttempt: (attempt) => languageAttempts.push(attempt.outcome),
+  });
+  assert.deepEqual(languageAttempts, ["rejected-by-language-directive", "completed"]);
+  assert.equal(repaired.value.narration[0]!.text, tamilNarration, "narration must remain verbatim through a language repair");
+  console.log(`  W3: bounded repair = ${languageAttempts.join(" → ")}`);
+
+  // --- W3: a repair that mutates narration is rejected; exhaustion is terminal ---
+  let languageTerminal: unknown = null;
+  let mutationSeen = false;
+  let calls = 0;
+  try {
+    await runBoundedVisualActionLanguageLoop({
+      generate: async () => {
+        calls += 1;
+        return { schemaVersion: "approved-script/v2", narration: [{ id: L1, sceneId: SCENE, text: calls === 1 ? tamilNarration : "mutated narration", claimIds: [], visualAction: localizedAction }] };
+      },
+      onAttempt: (attempt) => {
+        if (attempt.issues.some((issue) => issue.rule === "script-narration-mutated")) mutationSeen = true;
+      },
+    });
+  } catch (error) {
+    languageTerminal = error;
+  }
+  assert.ok(mutationSeen, "a retry that rewrites narration must be reported as script-narration-mutated");
+  assert.ok(languageTerminal instanceof ScriptLanguageDirectiveExhaustedError);
+  assert.equal((languageTerminal as ScriptLanguageDirectiveExhaustedError).code, SCRIPT_LANGUAGE_DIRECTIVE_EXHAUSTED);
+  console.log("  W3: narration mutation rejected; exhaustion fails visibly.");
 
   console.log("s05 PASS");
 };

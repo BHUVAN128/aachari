@@ -37,6 +37,25 @@ to `packages/pipeline` at Phase 6.
 | Gap 4 transport hardening | `steps/s02-research/transport-hardening.ts` | `packages/providers/src/errors.ts`, `openai.ts`, `gemini.ts`, `elevenlabs.ts` | [x] | [ ] |
 | Gap 2 visual pacing | `steps/s05-script/pacing.ts`, `steps/s08-voiceover/line-synthesis.ts` | `prompts/script.ts`, `providers/elevenlabs.ts`, `contracts` | [x] | [ ] |
 
+## Alignment, curation, language & caption hardening (W1–W5 — sandbox)
+
+Sandbox-first hardening for the voiceover/caption/language defects found while
+tracing s05–s13. Deterministic tests run with `node test/pipeline/steps/<step>/test.ts`;
+promotion to `packages/` plus the governing-doc updates is a separate, explicit
+user-approved change (Phase 6 style).
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| W2 s08 pre-save alignment integrity gate + bounded re-synthesis (deadlock fix) | `steps/s08-voiceover/alignment-gate.ts` | [x] | [ ] | [ ] |
+| W1 shared curated-term derivation (verified-pack terms, narration priority) + voice-aware voiceover input hash | `steps/s08-voiceover/curated-terms.ts` | [x] | [ ] | [ ] |
+| W3 English `visualAction` directive + s06 entity-description language gate (bounded repair) | `steps/s05-script/language-directive.ts` | [x] | [ ] | [ ] |
+| W4 caption safe-area bound + true per-scene caption zone + width-aware cue packing + one-diagram-per-scene invariant | `steps/s10-spatial-layout/caption-zone.ts` | [x] | [ ] | [ ] |
+| W5 break-tag pause execution + measured-gap gate | `steps/s08-voiceover/line-synthesis.ts` | [x] | [ ] | [ ] |
+
+Deterministic suites: `steps/s08-voiceover/test.ts`, `steps/s05-script/test.ts`,
+`steps/s10-spatial-layout/caption-zone.test.ts`; harness type gate
+`npx tsc -p test/pipeline/tsconfig.json`.
+
 ## Workflows
 
 | Workflow | Scenario | Deterministic path | Live path |

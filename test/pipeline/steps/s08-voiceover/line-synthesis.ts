@@ -98,3 +98,65 @@ export const mapStructuredAlignment = (alignment: Alignment, lines: string[]): M
   const issues = [...validateMonotonicWords(mapped.words), ...validateBreakCount(mapped.breaks, lines.length)];
   return { ...mapped, issues };
 };
+
+/**
+ * W5 — deterministic pause execution (test-local first; promoted into
+ * `packages/providers/src/elevenlabs.ts`, `packages/pipeline/src/context.ts`, and
+ * the s08 handler at Phase 6).
+ *
+ * `canonicalNarrationText` joins lines with "\n\n" and `ScriptLineSchema` has no
+ * `pauseMs`, so production reserves no pause for diagram inspection at all. This
+ * builds structured narration with an explicit, deterministic SSML break derived
+ * from `pauseMs` (never a free-form marker), then measures the inter-line silence
+ * in the returned alignment and fails if the break was not rendered. Repairs stay
+ * retries; timestamps are never healed.
+ */
+export type PacedLine = { text: string; pauseMs?: number };
+
+/** `<break time="2.000s"/>`; empty for a line with no reserved pause. */
+export const pauseBreakTag = (pauseMs: number): string => (pauseMs > 0 ? `<break time="${(pauseMs / 1000).toFixed(3)}s"/>` : "");
+
+const PAUSE_TAG_PATTERN = /<break\s+time="[\d.]+s"\s*\/>/g;
+
+/** Removes pause tags before word-count/alignment comparison. */
+export const stripPauseTags = (text: string): string => text.replace(PAUSE_TAG_PATTERN, "");
+
+/** Deterministic structured narration: one spoken segment plus its break per line. */
+export const buildPacedLineStructuredNarration = (lines: PacedLine[], breakMarker = LINE_BREAK): string =>
+  lines.map((line) => `${line.text.trim()}${pauseBreakTag(line.pauseMs ?? 0)}`).join(breakMarker);
+
+const countWords = (text: string) => stripPauseTags(text).trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * Measured-gap gate. Splits the alignment at the known per-line word counts and
+ * asserts the silence between line N and line N+1 is at least the pause reserved
+ * after line N (minus tolerance). A rendered break that the transport dropped is
+ * visible here instead of silently collapsing the visual dwell.
+ */
+export const validateMeasuredBreaks = (params: { lines: PacedLine[]; words: WordTiming[]; toleranceMs?: number }): AlignmentIssue[] => {
+  const tolerance = params.toleranceMs ?? 150;
+  const issues: AlignmentIssue[] = [];
+  let cursor = 0;
+  for (let index = 0; index < params.lines.length; index += 1) {
+    const line = params.lines[index]!;
+    const count = countWords(line.text);
+    const first = params.words[cursor];
+    const last = params.words[cursor + count - 1];
+    if (count > 0 && (!first || !last)) {
+      issues.push({ rule: "alignment-line-missing", evidence: { lineIndex: index, text: line.text }, remediation: "Re-synthesize; every structured line must appear in the alignment." });
+      return issues;
+    }
+    const pauseMs = line.pauseMs ?? 0;
+    const nextLine = params.lines[index + 1];
+    if (pauseMs > 0 && nextLine && last) {
+      const nextFirst = params.words[cursor + count];
+      const required = pauseMs - tolerance;
+      const measured = nextFirst ? nextFirst.startMs - last.endMs : -Infinity;
+      if (measured < required) {
+        issues.push({ rule: "voice-pause-not-rendered", evidence: { lineIndex: index, pauseMs, measuredMs: Number.isFinite(measured) ? measured : null, requiredMs: required }, remediation: "Re-synthesize with the structured break; the reserved inspection pause was not rendered." });
+      }
+    }
+    cursor += count;
+  }
+  return issues;
+};
