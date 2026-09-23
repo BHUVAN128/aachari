@@ -11,7 +11,7 @@ expected outcome sequence from a real, unblocked run, and its `test.ts` passes.
 | s01 | preflight | capability report emitted; missing credentials fail visibly; frozen-source screening; privacy gate; provenance validation; cost ceiling + idempotent run identity; compliance-report/v1 | [ ] |
 | s02 | research | lossless evidence map; fact-pack schema/contract; claims cite locked segments | [x] |
 | s03 | fact-verification | verifier rejects once then accepts (WF2); exhaustion fails visibly | [ ] |
-| s04 | blueprint | blueprint schema; objective coverage; critical-claim coverage | [ ] |
+| s04 | blueprint | blueprint schema; objective coverage; critical-claim coverage; scene-density guard; critical-claim budget; visual-beat validation; bounded QA repair loop; composite input hash | [ ] |
 | s05 | script | script schema; verifier loop; `pauseMs` pacing present | [ ] |
 | s06 | visual-bible | visual-bible schema; safe-area fractions | [ ] |
 | s07 | assets | typed diagram models; PNG-only illustration gate; omission fallback | [ ] |
@@ -112,6 +112,31 @@ governing-doc updates in `video-generation-process.md` and `benchmarkstofocus.md
 The s03 handler now regenerates only rejected claims through the planning route,
 replaces `source_claims` in one transaction, and emits `verified-fact-pack/v1`.
 The real verifier run still needs `GEMINI_API_KEY`.
+
+## Blueprint hardening (s04 — sandbox)
+
+Deterministic hardening for Flaws 1–6. Pre-generation guards (0 tokens) run over
+the verified fact pack and snapshot; QA findings drive a bounded repair loop
+instead of failing on the first finding. Tests live in
+`steps/s04-blueprint/test.ts` (zero provider keys, zero database); the live
+skeleton is `steps/s04-blueprint/live.ts`.
+
+| Item | Where it lives now | Deterministic tests | Live | Promoted |
+| --- | --- | --- | --- | --- |
+| F1 composite input hash `sha([factPack, snapshotHash])` | `steps/s04-blueprint/input-composite.ts` | [x] | n/a | [ ] |
+| F2 scene-density guard (6–20s/scene) | `steps/s04-blueprint/pacing-guard.ts` | [x] | n/a | [ ] |
+| F3 critical-claim budget (8/min, pre-gen) + per-scene cap (3) | `steps/s04-blueprint/claim-budget.ts` | [x] | n/a | [ ] |
+| F4/F6 visual-beat validation + English directive | `steps/s04-blueprint/visual-directives.ts` | [x] | n/a | [ ] |
+| F5 bounded blueprint repair loop (max 3, `BLUEPRINT_QA_EXHAUSTED`) | `steps/s04-blueprint/blueprint-repair.ts` | [x] | n/a | [ ] |
+
+Promotion (Phase 6, separate change) ports the five modules into
+`packages/pipeline/src/blueprint-qa.ts`, `blueprint-repair.ts`,
+`prompts/blueprint.ts`, and `pipeline/stages/s04-blueprint.ts` (pre-gen guard
+before `withFallback`; the bounded loop wraps generation+QA; composite hash on
+save), adds `packages/pipeline/test/blueprint-qa.test.ts`, and carries the
+governing-doc updates in `video-generation-process.md` §4,
+`benchmarkstofocus.md` (Lesson-plan gate row), and `model-recommendations.md` in
+the same change.
 
 ## Intake hardening (s00 — sandbox, pre-run)
 
