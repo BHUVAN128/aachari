@@ -89,7 +89,7 @@ export const assembleBraveDocuments = (sources: ReadonlyArray<Pick<BraveGroundin
       retrievedUrl: source.url,
       byteSize,
       sha256: sha256(text),
-      sourceBytesSha256: sha256(source.snippets.join("\n")),
+      sourceBytesSha256: sha256(JSON.stringify({ url: source.url, snippets: source.snippets })),
       mimeType: "text/plain",
       extractedText: text,
     });

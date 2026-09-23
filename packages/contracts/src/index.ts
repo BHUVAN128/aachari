@@ -235,6 +235,8 @@ export const SourceSegmentSchema = z.object({
   startOffset: z.number().int().nonnegative(),
   endOffset: z.number().int().positive(),
   text: z.string(),
+  /** Marked read-only overlap context; citable evidence but never part of the lossless primary tiling. */
+  overlap: z.boolean().optional(),
 });
 export type SourceSegment = z.infer<typeof SourceSegmentSchema>;
 

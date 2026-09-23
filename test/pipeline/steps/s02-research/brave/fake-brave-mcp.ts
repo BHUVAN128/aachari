@@ -28,14 +28,14 @@ const SENTENCE = "Photosynthesis converts light energy into chemical energy stor
 const grounding = {
   grounding: {
     generic: [
-      { url: "https://www.example.edu/photosynthesis", title: "Photosynthesis — overview", snippets: [SENTENCE.repeat(3).trim(), SENTENCE.repeat(2).trim()] },
+      { url: "https://www.example.edu/photosynthesis", title: "Photosynthesis — overview", snippets: [SENTENCE.repeat(25).trim(), SENTENCE.repeat(25).trim()] },
       { url: "https://www.example.org/light-reactions", title: "Light-dependent reactions", snippets: [SENTENCE.repeat(3).trim()] },
     ],
     poi: { results: [] },
     map: { results: [] },
   },
   sources: {
-    "https://www.example.edu/photosynthesis": { title: "Photosynthesis — overview", snippets: [SENTENCE.repeat(3).trim()] },
+    "https://www.example.edu/photosynthesis": { title: "Photosynthesis — overview", snippets: [SENTENCE.repeat(25).trim()] },
     "https://www.example.org/light-reactions": { title: "Light-dependent reactions", snippets: [SENTENCE.repeat(3).trim()] },
   },
 };

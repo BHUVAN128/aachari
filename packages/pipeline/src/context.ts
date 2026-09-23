@@ -133,6 +133,35 @@ export const buildSourceEvidenceMapWithOverlap = (
   return { map, overlaps: allOverlaps, primaryJoin };
 };
 
+/**
+ * Persists overlap context alongside primary segments in one locked map. Primary
+ * segments keep their lossless tiling; overlap segments are appended marked
+ * (`overlap: true`) and are citable evidence. Used by s02 so a claim that lands on
+ * the context around a boundary can cite it without duplicating source bytes.
+ */
+export const mergeOverlapSegments = (
+  map: ReturnType<typeof SourceEvidenceMapSchema.parse>,
+  overlaps: SemanticSegment[],
+): ReturnType<typeof SourceEvidenceMapSchema.parse> => {
+  if (!overlaps.length) return map;
+  const bySource = new Map<string, SemanticSegment[]>();
+  for (const overlap of overlaps) {
+    const list = bySource.get(overlap.sourceId) ?? [];
+    list.push(overlap);
+    bySource.set(overlap.sourceId, list);
+  }
+  return SourceEvidenceMapSchema.parse({
+    schemaVersion: "source-evidence-map/v1",
+    sources: map.sources.map((source) => ({
+      sourceId: source.sourceId,
+      sourceHash: source.sourceHash,
+      segments: [...source.segments, ...(bySource.get(source.sourceId) ?? [])]
+        .map((segment) => ({ ...segment, overlap: "overlap" in segment ? segment.overlap === true : false }))
+        .sort((a, b) => a.startOffset - b.startOffset || Number(a.overlap) - Number(b.overlap)),
+    })),
+  });
+};
+
 /** Resolves primary or overlap segment ids against a map, used by citation checks. */
 export const resolveSegments = (
   map: { sources: Array<{ sourceId: string; sourceHash: string; segments: SourceSegment[] }> },

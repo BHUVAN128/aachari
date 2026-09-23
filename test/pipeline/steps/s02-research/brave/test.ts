@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { closeDb } from "@upcraft/db";
+import { VerifiedFactPackSchema } from "@upcraft/contracts";
 import {
   BRAVE_BACKOFF_MS,
   BRAVE_RETRY_LADDER,
@@ -9,6 +10,7 @@ import {
   BraveResearchUnavailableError,
   BraveSchemaDriftError,
   BraveTerminalError,
+  McpTransportError,
   broadenQuery,
   classifyBraveFailureText,
   flattenToolError,
@@ -18,10 +20,10 @@ import {
   type BraveAttemptRecord,
   type BraveGroundingSource,
 } from "@upcraft/providers";
-import { assembleBraveDocuments, buildSourceEvidenceMapWithOverlap, closeQueue, joinBraveSnippets } from "@upcraft/pipeline";
+import { assembleBraveDocuments, buildSourceEvidenceMapWithOverlap, closeQueue, joinBraveSnippets, mergeOverlapSegments } from "@upcraft/pipeline";
 import { prepareHarness } from "../../../setup/stage-context.ts";
 import { buildRunInput } from "../../../setup/inputs.ts";
-import { runBraveResearchHarness } from "./research-brave.ts";
+import { runBraveResearchHarness, runDownstreamVerificationHarness } from "./research-brave.ts";
 
 const fakeServerPath = fileURLToPath(new URL("./fake-brave-mcp.ts", import.meta.url));
 const route = resolveModelRoute("research-web");
@@ -102,6 +104,18 @@ const main = async () => {
   assert.equal(terminalCalls, 1, "auth failures must never be retried");
   console.log("  5. terminal auth: exactly 1 attempt, never retried.");
 
+  // Timeout (hung socket) is a classified transport failure and is retried through every attempt.
+  let timeouts = 0;
+  const stubTimeout = asClient({ start: async () => {}, assertLlmContextTool: async () => [], callLlmContext: async () => { timeouts += 1; throw new McpTransportError("timeout", "Brave MCP tools/call timed out"); }, close: async () => {} });
+  await assert.rejects(runBraveResearch(route, { query: "x", client: stubTimeout, sleep: noSleep }), (error: unknown) => {
+    assert.ok(error instanceof BraveResearchUnavailableError);
+    assert.equal(error.attempts.length, 5);
+    assert.ok(error.attempts.every((record) => record.errorCode === "BRAVE_TIMEOUT"));
+    return true;
+  });
+  assert.equal(timeouts, 5, "a hung call escalates through the full ladder");
+  console.log("  5b. timeout: 5 attempts, all BRAVE_TIMEOUT.");
+
   // --- 6. Real fake MCP process: realistic string errors + schema assertion ---
   const realSuccess = await runBraveResearch(route, { query: "photosynthesis", client: clientFor("success"), sleep: noSleep });
   assert.equal(realSuccess.sources.length, 2);
@@ -120,6 +134,13 @@ const main = async () => {
   await assert.rejects(runBraveResearch(route, { query: "photosynthesis", client: clientFor("error-429"), sleep: noSleep }), (error: unknown) => {
     assert.ok(error instanceof BraveResearchUnavailableError);
     assert.equal(error.attempts.length, 5, "rate limits are retried through the full ladder");
+    assert.ok(error.attempts.every((record) => record.errorCode === "BRAVE_429"));
+    return true;
+  });
+  await assert.rejects(runBraveResearch(route, { query: "photosynthesis", client: clientFor("error-500"), sleep: noSleep }), (error: unknown) => {
+    assert.ok(error instanceof BraveResearchUnavailableError);
+    assert.equal(error.attempts.length, 5, "server errors are retried through the full ladder");
+    assert.ok(error.attempts.every((record) => record.errorCode === "BRAVE_5XX"));
     return true;
   });
   await assert.rejects(runBraveResearch(route, { query: "photosynthesis", client: clientFor("schema-missing"), sleep: noSleep }), (error: unknown) => {
@@ -150,29 +171,51 @@ const main = async () => {
   assert.notEqual(documents[0]!.sha256, documents[0]!.sourceBytesSha256);
   console.log("  7. policy: insecure/too-short/duplicate dropped; provenance hashes + byte size recorded.");
 
-  // --- 8. Production segmentation still tiles losslessly with overlap evidence ---
+  // --- 8. Production segmentation tiles losslessly with citable marked overlap ---
+  const sourceId = "11111111-1111-4111-8111-111111111111";
+  const sourceHash = "a".repeat(64);
   const text = "Photosynthesis converts light. ".repeat(400).trim();
-  const { map, overlaps, primaryJoin } = buildSourceEvidenceMapWithOverlap([{ id: "11111111-1111-4111-8111-111111111111", sha256: "a".repeat(64), extractedText: text }]);
+  const { map, overlaps, primaryJoin } = buildSourceEvidenceMapWithOverlap([{ id: sourceId, sha256: sourceHash, extractedText: text }]);
   assert.equal(primaryJoin, text);
   assert.ok(map.sources[0]!.segments.length > 1);
   assert.ok(overlaps.length >= map.sources[0]!.segments.length - 1);
   assert.ok(overlaps.every((segment) => segment.overlap === true && segment.text.length <= 300));
-  console.log(`  8. segmentation (promoted to packages/pipeline): ${map.sources[0]!.segments.length} primary, ${overlaps.length} overlap, lossless.`);
+  const merged = mergeOverlapSegments(map, overlaps);
+  const mergedSegments = merged.sources[0]!.segments;
+  assert.equal(mergedSegments.length, map.sources[0]!.segments.length + overlaps.length, "the persisted map carries primary + overlap segments");
+  assert.ok(mergedSegments.some((segment) => segment.overlap === true), "overlap segments must be marked in the locked map");
+  assert.ok(mergedSegments.some((segment) => !segment.overlap), "primary segments must remain unmarked");
+  assert.ok(mergedSegments.every((segment) => segment.sourceId === sourceId && segment.sourceHash === sourceHash));
+  console.log(`  8. segmentation (promoted): ${map.sources[0]!.segments.length} primary + ${overlaps.length} marked overlap, lossless, all citable.`);
 
-  // --- 9. Real stage retrieval half against the harness DB + fake MCP server ---
+  // --- 9. Full stage chain against the harness DB + fake MCP server ---
   await prepareHarness();
   const retrieved = await runBraveResearchHarness({ input: await buildRunInput("photosynthesis-sourceless"), scenario: "success" });
   assert.equal(retrieved.sourceCount, 2, "Brave sources must become source_documents rows");
-  assert.ok(retrieved.evidenceMap, "a source-evidence-map must be saved before planning");
+  assert.ok(retrieved.evidenceMap, "a source-evidence-map must be saved");
+  assert.ok(retrieved.factPack, "a fact-pack/v2 must be produced by the planning call");
+  assert.equal(retrieved.factPack!.schemaVersion, "fact-pack/v2");
   assert.equal(retrieved.evidenceMap!.schemaVersion, "source-evidence-map/v1");
-  const retrievedText = retrieved.evidenceMap!.sources.flatMap((source) => source.segments).map((segment) => segment.text).join("");
-  assert.ok(retrievedText.includes("Photosynthesis"), "retrieved snippets must be the locked citable text");
-  console.log(`  9. stage retrieval: ${retrieved.sourceCount} source rows + valid evidence map before the planning call (planning outcome: ${retrieved.failureMessage ? "blocked" : "not evaluated"}).`);
+  assert.ok(retrieved.evidenceMap!.sources.flatMap((source) => source.segments).some((segment) => segment.overlap === true), "overlap context must be persisted and citable");
+  for (const claim of retrieved.factPack!.claims) {
+    const source = retrieved.evidenceMap!.sources.find((candidate) => candidate.sourceId === claim.evidence.sourceId && candidate.sourceHash === claim.evidence.sourceHash);
+    assert.ok(source, `claim ${claim.id} cites an unknown source`);
+    for (const segmentId of claim.evidence.segmentIds) assert.ok(source!.segments.some((segment) => segment.id === segmentId), `claim ${claim.id} cites missing segment ${segmentId}`);
+  }
+  console.log(`  9. stage chain: ${retrieved.sourceCount} source rows, schema-valid fact pack (${retrieved.factPack!.claims.length} claims), all citations resolve.`);
+
+  // --- 10. Downstream adaptability: frozen Brave artifacts → s03 verifier resolves every claim ---
+  const downstream = await runDownstreamVerificationHarness(retrieved.runId);
+  assert.ok(downstream.verification, `s03 must consume the Brave output: ${downstream.failureMessage ?? ""}`);
+  const verified = VerifiedFactPackSchema.parse(downstream.verification);
+  assert.equal(verified.claims.length, retrieved.factPack!.claims.length);
+  assert.equal(verified.omissions.length, 0, "no claim may be dropped when every claim resolves");
+  console.log("  10. downstream: frozen Brave s02 output → s03 verified every claim (0 omissions).");
 
   const exhausted = await runBraveResearchHarness({ input: await buildRunInput("photosynthesis-sourceless"), scenario: "empty" });
   assert.equal(exhausted.sourceCount, 0);
   assert.equal(exhausted.failureMessage, "Something went wrong. Please try again later.");
-  console.log("  9b. stage exhaustion: zero fabricated sources, client-safe failure message.");
+  console.log("  10b. stage exhaustion: zero fabricated sources, client-safe failure message.");
 
   await closeQueue();
   await closeDb();

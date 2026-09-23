@@ -47,10 +47,10 @@ to `packages/pipeline` at Phase 6.
 
 ## Promotion gate (Phase 6)
 - [ ] all step boxes ticked
-- [ ] gap modules ported to `packages/`
-- [ ] `packages/*/test` regression suites pass
-- [ ] governing-doc updates committed in the same change
-- [ ] harness retained under `test/` as the sandbox
+- [x] gap modules ported to `packages/`
+- [x] `packages/*/test` regression suites pass
+- [x] governing-doc updates committed in the same change
+- [x] harness retained under `test/` as the sandbox
 
 ## Smarter intake + web research + medical deprecation
 
