@@ -1,4 +1,4 @@
-# Upcraft educational-video system
+# Aachari
 
 Local, source-grounded educational-video generation with PostgreSQL as the durable authority. It uses a real BullMQ/Valkey dispatcher, private MinIO artifacts, actual provider adapters, and a headless Remotion renderer—there is no studio-driven runtime or fake completion path.
 
